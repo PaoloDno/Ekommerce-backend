@@ -2,12 +2,10 @@ const jwt = require("jsonwebtoken");
 const User = require("../models/UserModel.js");
 const SECRET_KEY = process.env.JWT_SECRET;
 
-export const authMiddleware = async (req, res) => {
-  
+exports.authMiddleware = async (req, res, next) => {
   console.log("Auth Middleware Triggered");
 
   try {
-
     const authHeader = req.headers.authorization;
     if (!authHeader || !authHeader.startsWith("Bearer ")) {
       const error = new Error("Access denied. No token provided.");
@@ -28,24 +26,21 @@ export const authMiddleware = async (req, res) => {
       throw error;
     }
 
-    req.user = decoded; // or `decoded`, depending on usage
+    req.user = decoded; // Attach decoded token payload
     next();
   } catch (error) {
     if (error instanceof jwt.TokenExpiredError) {
       error.statusCode = 401;
       error.message = "Token expired. Please log in again.";
-      
     } else if (error instanceof jwt.JsonWebTokenError) {
       error.statusCode = 401;
       error.message = "Invalid token. Access denied.";
-      
     } else {
       error.statusCode = error.statusCode || 500;
       error.message = error.message || "Internal server error.";
-      
     }
 
     console.error("Token verification error:", error.message);
-    res.status(500).json({ message: "Authentication error" });
+    next(error); // Pass to global error handler
   }
 };

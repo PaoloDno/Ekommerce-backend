@@ -4,8 +4,13 @@ const dotenv = require('dotenv');
 const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
 
-const router = express.Router();
+const errorHandler = require('./middlewares/ErrorHandlerMiddleware.js')
+
 const connectDB = require("./config/db.js")
+
+// routes
+const USERroute = require("./routes/authRoute.js");
+const ORDERroute = require("./routes/orderRoute.js");
 
 const app = express()
 const PORT = process.env.PORT || 5000;
@@ -26,15 +31,22 @@ app.use(express.json());
 app.use(limiter);
 app.use(helmet);
 
-
 // connectionDB
 connectDB();
+
+//routes
+
+app.use('/commerce/user', USERroute);
+app.use('/commerce/order', ORDERroute);
+
 
 app.get('/', (req, res) => {
   res.send('Hello World!')
 })
 
+// Error Handler
+app.use(errorHandler);
+
 app.listen(PORT, () => 
   console.log(`Server Running on PORT http://localhost:${PORT}`
-
-  ));
+));
