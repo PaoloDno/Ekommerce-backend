@@ -16,16 +16,27 @@ const generateToken = (user) => {
 
 exports.signUpUser = async (req, res) => {
   const errors = validationResult(req);
-  if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
+  if (!errors.isEmpty())
+    return res.status(400).json({ errors: errors.array() });
 
   try {
-    const { username, firstname, lastname, middlename, email, password, address } = req.body;
+    const {
+      username,
+      firstname,
+      lastname,
+      middlename,
+      email,
+      password,
+      address,
+    } = req.body;
 
     const existingUserEmail = await User.findOne({ email });
-    if (existingUserEmail) return res.status(400).json({ message: "Email already registered!" });
+    if (existingUserEmail)
+      return res.status(400).json({ message: "Email already registered!" });
 
     const existingUserName = await User.findOne({ username });
-    if (existingUserName) return res.status(400).json({ message: "Username already registered!" });
+    if (existingUserName)
+      return res.status(400).json({ message: "Username already registered!" });
 
     const saltRounds = parseInt(process.env.BCRYPT_SALT_ROUNDS) || 12;
     const hashedPassword = await bcrypt.hash(password, saltRounds);
@@ -41,7 +52,7 @@ exports.signUpUser = async (req, res) => {
     });
 
     await Cart.create({ user: newUser._id, items: [] });
-    
+
     const token = generateToken(user);
     res.status(201).json({ message: "User registered successfully", token });
   } catch (error) {
@@ -52,7 +63,8 @@ exports.signUpUser = async (req, res) => {
 
 exports.logInUser = async (req, res) => {
   const errors = validationResult(req);
-  if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
+  if (!errors.isEmpty())
+    return res.status(400).json({ errors: errors.array() });
 
   try {
     const { email, password } = req.body;
@@ -60,7 +72,8 @@ exports.logInUser = async (req, res) => {
     if (!user) return res.status(401).json({ message: "Invalid credentials" });
 
     const isMatch = await bcrypt.compare(password, user.password);
-    if (!isMatch) return res.status(401).json({ message: "Invalid credentials" });
+    if (!isMatch)
+      return res.status(401).json({ message: "Invalid credentials" });
 
     const token = generateToken(user);
     res.status(200).json({ message: "Login successful", token });
