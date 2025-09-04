@@ -2,7 +2,7 @@ const jwt = require("jsonwebtoken");
 const User = require("../models/UserModel.js");
 const SECRET_KEY = process.env.JWT_SECRET;
 
-exports.authMiddleware = async (req, res, next) => {
+export const authenticationMiddleware = async (req, res, next) => {
   console.log("Auth Middleware Triggered");
 
   try {
