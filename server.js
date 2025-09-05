@@ -10,7 +10,12 @@ const connectDB = require("./config/db.js")
 
 // routes
 const USERroute = require("./routes/authRoute.js");
+const CARTroute = require("./routes/cartRoute.js");
+const CATEGORYroute = require("./routes/categoryRoute.js");
+const PRODUCTroute = require("./routes/productRoute.js");
 const ORDERroute = require("./routes/orderRoute.js");
+const REVIEWroute = require("./routes/reviewRoute.js"); 
+
 
 const app = express()
 const PORT = process.env.PORT || 5000;
@@ -37,7 +42,11 @@ connectDB();
 //routes
 
 app.use('/commerce/user', USERroute);
+app.use('/commerce/cart', CARTroute);
+app.use('/commerce/category', CATEGORYroute);
+app.use('/commerce/product', PRODUCTroute);
 app.use('/commerce/order', ORDERroute);
+app.use('/commerce/reviews', REVIEWroute);
 
 
 app.get('/', (req, res) => {

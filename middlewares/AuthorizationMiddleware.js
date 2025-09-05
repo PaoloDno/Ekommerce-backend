@@ -1,4 +1,4 @@
-export const adminMiddleware = (req, next) => {
+const adminMiddleware = (req, next) => {
   if (req.user && req.user.isAdmin) {
       console.log(req.user.isAdmin);
       console.log("is admin:", req.user.isAdmin);
@@ -9,3 +9,5 @@ export const adminMiddleware = (req, next) => {
       next(error); // Pass the error to the error handler
   }
 };
+
+module.exports = adminMiddleware;

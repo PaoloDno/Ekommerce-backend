@@ -1,8 +1,8 @@
-const jwt = require("jsonwebtoken");
+const jwt = require('jsonwebtoken');
 const User = require("../models/UserModel.js");
 const SECRET_KEY = process.env.JWT_SECRET;
 
-export const authenticationMiddleware = async (req, res, next) => {
+const authenticationMiddleware = async (req, res, next) => {
   console.log("Auth Middleware Triggered");
 
   try {
@@ -44,3 +44,5 @@ export const authenticationMiddleware = async (req, res, next) => {
     next(error); // Pass to global error handler
   }
 };
+
+module.exports = authenticationMiddleware;

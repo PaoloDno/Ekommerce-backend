@@ -1,6 +1,6 @@
 const express = require("express");
-const { authenticationMiddleware} = require('../middlewares/AuthenticationMiddleware.js');
-const { adminMiddleware } = require('../middlewares/AuthorizationMiddleware.js');
+const authenticationMiddleware = require('../middlewares/AuthenticationMiddleware.js');
+const adminMiddleware = require('../middlewares/AuthorizationMiddleware.js');
 const { 
   createOrder,
   getUserOrders,

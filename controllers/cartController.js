@@ -3,8 +3,9 @@ const Product = require("../models/ProductModel.js");
 
 exports.getCart = async (req, res, next) => {
   try {
-    const cart = await Cart.findOne({ userId: req.user.id })
-      .populate("items.productId");
+    const cart = await Cart.findOne({ userId: req.user.id }).populate(
+      "items.productId"
+    );
 
     if (!cart) {
       // Throw a specific error if cart is missing
@@ -49,7 +50,9 @@ exports.addToCart = async (req, res, next) => {
         items: [{ product: productId, quantity }],
       });
     } else {
-      const itemIndex = cart.items.findIndex(item => item.product.toString() === productId);
+      const itemIndex = cart.items.findIndex(
+        (item) => item.product.toString() === productId
+      );
 
       if (itemIndex > -1) {
         cart.items[itemIndex].quantity += quantity;
@@ -62,9 +65,9 @@ exports.addToCart = async (req, res, next) => {
     res.status(200).json({
       success: true,
       message: "Added to Cart!",
-      cart
-    })
-  } catch (error){
+      cart,
+    });
+  } catch (error) {
     next(error);
   }
 };
@@ -74,25 +77,27 @@ exports.removeFromCart = async (req, res, next) => {
     const userId = req.user.id;
     const { productId } = req.params;
 
-    const cart = await Cart.findOne({ user: userId});
+    const cart = await Cart.findOne({ user: userId });
     if (!cart) {
       const error = new Error("Cart not found");
       error.statusCode = 404;
       throw error;
     }
 
-    cart.items = cart.items.filter(item => item.product.toString() !== productId);
+    cart.items = cart.items.filter(
+      (item) => item.product.toString() !== productId
+    );
     await cart.save();
 
     res.status(200).json({
       success: true,
       message: "Product remove from Cart",
-      cart
+      cart,
     });
   } catch (error) {
     next(error);
   }
-}
+};
 
 exports.clearCart = async (req, res, next) => {
   try {
@@ -101,7 +106,7 @@ exports.clearCart = async (req, res, next) => {
 
     res.status(200).json({
       success: true,
-       message: "Cart cleared"
+      message: "Cart cleared",
     });
   } catch (error) {
     next(error);
