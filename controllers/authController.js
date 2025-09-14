@@ -4,12 +4,16 @@ const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const { validationResult } = require("express-validator");
 
-const JWT_SECRET = process.env.JWT_SECRET || "secretKey";
 
 const generateToken = (user) => {
+  
+  const SECRET_KEY = process.env.JWT_SECRET
+  console.log(SECRET_KEY);
   return jwt.sign(
-    { userId: user._id, username: user.username, isAdmin: user.isAdmin },
-    JWT_SECRET,
+    { userId: user._id,
+      username: user.username,
+      isAdmin: user.isAdmin },
+    SECRET_KEY,
     { expiresIn: "6h" }
   );
 };
@@ -119,7 +123,9 @@ exports.logInUser = async (req, res, next) => {
     }
     // console.log("d");
 
+
     const token = generateToken(user);
+
     const cart = await Cart.findOne({ userId: user._id });
     const totalItems = cart
       ? cart.items.reduce((sum, item) => sum + item.quantity, 0)
@@ -147,3 +153,41 @@ exports.logOutUser = async (req, res, next) => {
     next(error);
   }
 };
+
+
+exports.getUserProfile = async (req, res, next) => {
+  try {
+    const { userId } = req.user;
+
+    const user = await User.findById(userId)
+      .select("-password -__v -createdAt -updatedAt") // Hide sensitive fields
+      .populate({
+        path: "orderhistory.order",
+        select: "orderNumber totalAmount status createdAt", // Limit order fields
+      })
+      .populate({
+        path: "reviewHistory.product",
+        select: "name price", // Limit product fields
+      })
+      .populate({
+        path: "reviewHistory.review",
+        select: "rating comment createdAt", // Limit review fields
+      })
+      .lean(); // Return plain JS object, not a Mongoose doc
+
+    if (!user) {
+      const error = new Error("User not found");
+      error.statusCode = 404;
+      throw error;
+    }
+    console.log(user);
+    res.status(200).json({
+      success: true,
+      message: "User fetched successfully",
+      data: user,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+

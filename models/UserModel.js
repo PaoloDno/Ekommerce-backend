@@ -10,6 +10,8 @@ const userSchema = new mongoose.Schema({
   userAvatar: {type: String, default: "A1"},
   storeName: {type: String},
 
+  userTheme: {type: String, default: "default"},
+
   address: [{
     street: String,
     city: String,

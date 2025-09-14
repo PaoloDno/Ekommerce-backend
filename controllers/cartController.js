@@ -1,34 +1,40 @@
 const Cart = require("../models/CartModel.js");
 const Product = require("../models/ProductModel.js");
 
+
 exports.getCart = async (req, res, next) => {
   try {
-    const cart = await Cart.findOne({ userId: req.user.id }).populate(
-      "items.productId"
-    );
+    const cart = await Cart.findOne({ user: req.user.id })
+      .populate("items.product", "name price image"); // Only get needed fields
 
     if (!cart) {
-      // Throw a specific error if cart is missing
       const error = new Error("Cart not found for this user");
       error.statusCode = 404;
       throw error;
     }
 
-    // calculate total price
-    const totalPrice = cart.items.reduce((total, item) => {
-      return total + item.product.price * item.quantity;
-    }, 0);
+    // Calculate totals
+    const totalPrice = cart.items.reduce(
+      (total, item) => total + item.product.price * item.quantity,
+      0
+    );
+    const totalItems = cart.items.reduce(
+      (count, item) => count + item.quantity,
+      0
+    );
 
     res.status(200).json({
       success: true,
       message: "Cart fetched successfully",
       cart,
       totalPrice,
+      totalItems,
     });
   } catch (error) {
     next(error);
   }
 };
+
 
 exports.addToCart = async (req, res, next) => {
   try {
@@ -59,9 +65,11 @@ exports.addToCart = async (req, res, next) => {
       } else {
         cart.items.push({ product: productId, quantity });
       }
-
       await cart.save();
     }
+
+    await cart.populate("items.product", "name price image");
+
     res.status(200).json({
       success: true,
       message: "Added to Cart!",
@@ -71,6 +79,7 @@ exports.addToCart = async (req, res, next) => {
     next(error);
   }
 };
+
 
 exports.removeFromCart = async (req, res, next) => {
   try {
@@ -88,16 +97,18 @@ exports.removeFromCart = async (req, res, next) => {
       (item) => item.product.toString() !== productId
     );
     await cart.save();
+    await cart.populate("items.product", "name price image");
 
     res.status(200).json({
       success: true,
-      message: "Product remove from Cart",
+      message: "Product removed from Cart",
       cart,
     });
   } catch (error) {
     next(error);
   }
 };
+
 
 exports.clearCart = async (req, res, next) => {
   try {

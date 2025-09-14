@@ -1,10 +1,9 @@
-const jwt = require('jsonwebtoken');
+const jwt = require("jsonwebtoken");
 const User = require("../models/UserModel.js");
-const SECRET_KEY = process.env.JWT_SECRET;
 
 const authenticationMiddleware = async (req, res, next) => {
   console.log("Auth Middleware Triggered");
-
+  const SECRET_KEY = process.env.JWT_SECRET;
   try {
     const authHeader = req.headers.authorization;
     if (!authHeader || !authHeader.startsWith("Bearer ")) {
@@ -14,7 +13,7 @@ const authenticationMiddleware = async (req, res, next) => {
     }
 
     const token = authHeader.split(" ")[1];
-    console.log("Token found, verifying...");
+    console.log("Token found, verifying...", token);
 
     const decoded = jwt.verify(token, SECRET_KEY);
     // userId
