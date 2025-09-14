@@ -11,6 +11,6 @@ const router = express.Router();
 router.get("/", authenticationMiddleware, getCart);
 router.post("/", authenticationMiddleware, addToCart);
 router.delete("/:productId", authenticationMiddleware, removeFromCart);
-router.delete("/:id", authenticationMiddleware, clearCart);
+router.delete("/clear", authenticationMiddleware, clearCart);
 
 module.exports = router;

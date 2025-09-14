@@ -14,7 +14,9 @@ const CARTroute = require("./routes/cartRoute.js");
 const CATEGORYroute = require("./routes/categoryRoute.js");
 const PRODUCTroute = require("./routes/productRoute.js");
 const ORDERroute = require("./routes/orderRoute.js");
-const REVIEWroute = require("./routes/reviewRoute.js"); 
+const REVIEWroute = require("./routes/reviewRoute.js");
+const SELLERroute = require("./routes/sellerRoute.js");
+const SellerModel = require('./models/SellerModel.js');
 
 
 const app = express()
@@ -34,20 +36,20 @@ const limiter = rateLimit({
 app.use(cors());
 app.use(express.json());
 app.use(limiter);
-app.use(helmet);
+app.use(helmet());
 
 // connectionDB
 connectDB();
 
 //routes
 
-app.use('/commerce/user', USERroute);
-app.use('/commerce/cart', CARTroute);
-app.use('/commerce/category', CATEGORYroute);
-app.use('/commerce/product', PRODUCTroute);
-app.use('/commerce/order', ORDERroute);
-app.use('/commerce/reviews', REVIEWroute);
-
+app.use('/kommerce/user', USERroute);
+app.use('/kommerce/cart', CARTroute);
+app.use('/kommerce/category', CATEGORYroute);
+app.use('/kommerce/product', PRODUCTroute);
+app.use('/kommerce/order', ORDERroute);
+app.use('/kommerce/reviews', REVIEWroute);
+app.use('/kommerce/seller', SELLERroute);
 
 app.get('/', (req, res) => {
   res.send('Hello World!')

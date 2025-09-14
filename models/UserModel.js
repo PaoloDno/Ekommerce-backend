@@ -8,6 +8,7 @@ const userSchema = new mongoose.Schema({
   email: { type: String, unique: true, required: true },
   password: { type: String, required: true },
   userAvatar: {type: String, default: "A1"},
+  storeName: {type: String},
 
   address: [{
     street: String,
@@ -30,7 +31,6 @@ const userSchema = new mongoose.Schema({
   },{ timestamps:true });
 
   //Indexes
-  userSchema.index({email: 1}),
   userSchema.index({'orderHistory': 1});
   userSchema.index({'reviewHistory': 1});
 

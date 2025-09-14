@@ -17,6 +17,9 @@ const authenticationMiddleware = async (req, res, next) => {
     console.log("Token found, verifying...");
 
     const decoded = jwt.verify(token, SECRET_KEY);
+    // userId
+    // username
+    // isAdmin
     console.log("Decoded Token:", decoded);
 
     const user = await User.findById(decoded.userId);

@@ -15,6 +15,6 @@ const productSchema = new mongoose.Schema({
   seller: { type: mongoose.Schema.Types.ObjectId, ref: 'Seller' }
 }, { timestamps: true });
 
-productSchema.index({ name: 'text', category: 1, price: 1 });
+
 
 module.exports = mongoose.model('Product', productSchema);
