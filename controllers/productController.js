@@ -21,14 +21,21 @@ exports.createProduct = async (req, res, next) => {
       const error = new Error("Required field is empty");
       error.statusCode = 400;
       throw error;
-    }
+    };
 
     const foundCategory = await Category.findById(category);
     if (!foundCategory) {
       const error = new Error("Invalid category");
       error.statusCode = 400;
       throw error;
-    }
+    };
+
+    const foundSeller = await seller.findById(seller);
+    if(!foundSeller) {
+      const error = new Error("Invalid Seller");
+      error.statusCode = 400;
+      throw error;
+    };
     
     const product = new Product({
       name,
@@ -45,7 +52,7 @@ exports.createProduct = async (req, res, next) => {
     });
 
     await product.save();
-    res.status(201).json({ message: 'Product created', product });
+    res.status(201).json({ message: 'Product created'});
   } catch (error) {
     next(error);
   }

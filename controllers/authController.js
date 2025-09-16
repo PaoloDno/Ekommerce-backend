@@ -72,7 +72,7 @@ exports.signUpUser = async (req, res, next) => {
     await Cart.create({ user: newUser._id, items: [] });
 
     const token = generateToken(newUser);
-    const cart = await Cart.findOne({ userId: user._id });
+    const cart = await Cart.findOne({ userId: newUser._id });
     const totalItems = cart
       ? cart.items.reduce((sum, item) => sum + item.quantity, 0)
       : 0;
@@ -88,6 +88,7 @@ exports.signUpUser = async (req, res, next) => {
       },
     });
   } catch (error) {
+    console.log(error);
     next(error);
   }
 };
@@ -187,6 +188,41 @@ exports.getUserProfile = async (req, res, next) => {
       data: user,
     });
   } catch (error) {
+    next(error);
+  }
+};
+
+
+exports.selectorTheme = async (req, res, next) => {
+  try {
+    const { userId } = req.user;
+    const { theme } = req.body;
+
+    const validThemes = ["default", "sakura", "dark", "coffee", "dark2"];
+    if (!validThemes.includes(theme)) {
+      const error = new Error("Invalid theme");
+      error.statusCode = 400;
+      throw error;
+    }
+
+    const user = await User.findByIdAndUpdate(
+      userId,
+      { theme },
+      { new: true }
+    ).select("-password"); 
+
+    if (!user) {
+      const error = new Error("User not found");
+      error.statusCode = 404;
+      throw error;
+    }
+
+    return res.status(200).json({
+      theme: user.theme,
+      message: "Theme updated successfully",
+    });
+  } catch (error) {
+    console.error("Theme update error:", error);
     next(error);
   }
 };

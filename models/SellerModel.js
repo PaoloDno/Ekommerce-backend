@@ -32,7 +32,6 @@ const sellerSchema = new mongoose.Schema({
   }]
 }, { timestamps: true });
 
-sellerSchema.index({ storeName: 1 });
 sellerSchema.index({ 'salesHistory.order': 1 });
 
 module.exports = mongoose.model('Seller', sellerSchema);
