@@ -14,6 +14,6 @@ router.post("/login", validateLogin, logInUser);
 router.post("/logout", logOutUser);
 router.get("/get-user-profile", authenticationMiddleware, getUserProfile);
 
-router.post("/theme", authenticationMiddleware, selectorTheme);
+router.put("/theme", authenticationMiddleware, selectorTheme);
 
 module.exports = router;

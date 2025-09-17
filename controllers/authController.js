@@ -197,25 +197,29 @@ exports.selectorTheme = async (req, res, next) => {
   try {
     const { userId } = req.user;
     const { theme } = req.body;
-
+    console.log(theme);
     const validThemes = ["default", "sakura", "dark", "coffee", "dark2"];
     if (!validThemes.includes(theme)) {
       const error = new Error("Invalid theme");
       error.statusCode = 400;
       throw error;
+    } else {
+      console.log("valid THEME");
     }
 
     const user = await User.findByIdAndUpdate(
       userId,
-      { theme },
-      { new: true }
-    ).select("-password"); 
+      {"userTheme": theme },
+    );
+
 
     if (!user) {
       const error = new Error("User not found");
       error.statusCode = 404;
       throw error;
     }
+
+    console.log(user);
 
     return res.status(200).json({
       theme: user.theme,
