@@ -21,6 +21,7 @@ const generateToken = (user) => {
 exports.signUpUser = async (req, res, next) => {
   try {
     console.log("signing up");
+    console.log(req.body);
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
       const error = new Error("Validation failed.");

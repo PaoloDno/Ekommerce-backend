@@ -49,7 +49,7 @@ app.use('/kommerce/category', CATEGORYroute);
 app.use('/kommerce/product', PRODUCTroute);
 app.use('/kommerce/order', ORDERroute);
 app.use('/kommerce/reviews', REVIEWroute);
-app.use('/kommerce/seller', SELLERroute);
+app.use('/kommerce/store', SELLERroute);
 
 app.get('/', (req, res) => {
   res.send('Hello World!')

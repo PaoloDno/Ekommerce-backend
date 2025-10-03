@@ -8,7 +8,7 @@ const userSchema = new mongoose.Schema({
   email: { type: String, unique: true, required: true },
   password: { type: String, required: true },
   userAvatar: {type: String, default: "A1"},
-  storeName: {type: String},
+  storeName: {type: String, default: null},
 
   userTheme: {type: String, default: "default"},
 
@@ -28,7 +28,7 @@ const userSchema = new mongoose.Schema({
   reviewHistory: [{
     product: { type: mongoose.Schema.Types.ObjectId, ref: 'Product'},
     review: { type: mongoose.Schema.Types.ObjectId, ref: 'Review'},
-    revieAt: { type: Date, default: Date.now }
+    reviewAt: { type: Date, default: Date.now }
   }]
   },{ timestamps:true });
 
