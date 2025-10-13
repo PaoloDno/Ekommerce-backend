@@ -63,16 +63,22 @@ exports.getOwnerStore = async (req, res, next) => {
   try {
     const { userId } = req.user;
 
-    const foundOwnerStore = await Seller.findOne((owner = userId));
+    const foundOwnerStore = await Seller.findOne({owner: userId})
+    .populate({
+        path: "products",         
+        model: "Product",         
+        select: "name price stock productImage images", 
+      });
+      
     if (!foundOwnerStore) {
       const error = new Error("No Store");
       error.statusCode = 400;
       throw error;
     }
-
+    console.log(foundOwnerStore);
     res.status(200).json({
       success: true,
-      Seller: foundOwnerStore,
+      data: foundOwnerStore,
       message: "Owner Store successfully fetch",
     });
   } catch (error) {

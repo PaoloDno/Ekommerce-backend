@@ -1,5 +1,12 @@
 const mongoose = require("mongoose");
 
+mongoose.connection.on("connected", () => {
+  console.log("MongoDB is connected:", mongoose.connection.host);
+});
+
+mongoose.connection.on("disconnected", () => {
+  console.log("MongoDB disconnected");
+});
 
 const connectDB = async () => {
   try {

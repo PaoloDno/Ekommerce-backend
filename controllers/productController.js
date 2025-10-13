@@ -1,9 +1,10 @@
 const Product = require("../models/ProductModel.js");
 const Category = require("../models/CategoryModel.js");
+const Seller = require("../models/SellerModel.js");
 
 exports.createProduct = async (req, res, next) => {
   try {
-    const { 
+    const {
       name,
       sku,
       description,
@@ -14,46 +15,62 @@ exports.createProduct = async (req, res, next) => {
       productImage,
       images,
       attributes,
-      seller
+      seller: sellerId,
     } = req.body;
 
-    if (!name || !price || !category) {
+    console.log(sellerId);
+
+    console.log(req.body);
+
+     if (!name || !price || !category) {
       const error = new Error("Required field is empty");
       error.statusCode = 400;
       throw error;
-    };
+    }
 
-    const foundCategory = await Category.findById(category);
+    // find or create category
+    let foundCategory = await Category.findOne({ name: category.trim() });
     if (!foundCategory) {
-      const error = new Error("Invalid category");
-      error.statusCode = 400;
-      throw error;
-    };
+      foundCategory = new Category({ name: category.trim() });
+      await foundCategory.save();
+    }
 
-    const foundSeller = await seller.findById(seller);
-    if(!foundSeller) {
+    // find seller
+    const foundSeller = await Seller.findById(sellerId);
+    if (!foundSeller) {
       const error = new Error("Invalid Seller");
       error.statusCode = 400;
       throw error;
-    };
-    
+    }
+
+    // create product
     const product = new Product({
       name,
       sku,
       description,
       price,
-      category,
+      category: foundCategory._id,
       brand,
       stock,
       productImage,
       images,
       attributes,
-      seller
+      seller: sellerId,
     });
 
-    await product.save();
-    res.status(201).json({ message: 'Product created'});
+    // save product
+    const savedProduct = await product.save();
+
+    // link product to seller
+    foundSeller.products.push(savedProduct._id);
+    await foundSeller.save();
+
+    res.status(201).json({
+      message: "Product created and added to seller store",
+      product: savedProduct,
+    });
   } catch (error) {
+    console.log(error);
     next(error);
   }
 };
@@ -67,9 +84,9 @@ exports.getProducts = async (req, res) => {
       minPrice,
       maxPrice,
       sort = "createdAt", // default sort
-      order = "desc",     // asc or desc
+      order = "desc", // asc or desc
       page = 1,
-      limit = 10
+      limit = 10,
     } = req.query;
 
     let filter = {};
@@ -113,7 +130,7 @@ exports.getProducts = async (req, res) => {
       total,
       page: pageNum,
       pages: Math.ceil(total / limitNum),
-      products
+      products,
     });
   } catch (error) {
     next(error);
@@ -151,7 +168,7 @@ exports.updateProduct = async (req, res) => {
       productImage,
       images,
       attributes,
-      seller
+      seller,
     } = req.body;
 
     if (!name || !price || !category) {
@@ -180,7 +197,7 @@ exports.updateProduct = async (req, res) => {
         productImage,
         images,
         attributes,
-        seller
+        seller,
       },
       { new: true }
     );
@@ -191,7 +208,9 @@ exports.updateProduct = async (req, res) => {
       throw error;
     }
 
-    res.status(200).json({ message: "Product updated", product: updatedProduct });
+    res
+      .status(200)
+      .json({ message: "Product updated", product: updatedProduct });
   } catch (error) {
     next(error);
   }
