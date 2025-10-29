@@ -18,11 +18,51 @@ const productSchema = new mongoose.Schema(
         "Images must be an array of strings",
       ],
     },
-    attributes: { type: Map, of: String }, // e.g. { color: "Red", size: "M" }
+    attributes: { type: Map, of: String },
 
     seller: { type: mongoose.Schema.Types.ObjectId, ref: "Seller" },
+
+    
+    reviews: [
+      {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "Review",
+      },
+    ],
+    averageRating: {
+      type: Number,
+      default: 0,
+      min: 0,
+      max: 5,
+    },
+    numOfReviews: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
   },
   { timestamps: true }
 );
+
+productSchema.statics.updateProductRating = async function (productId) {
+  const Review = mongoose.model("Review");
+
+  const reviews = await Review.find({ product: productId });
+  if (reviews.length === 0) {
+    await this.findByIdAndUpdate(productId, {
+      averageRating: 0,
+      numOfReviews: 0,
+    });
+    return;
+  }
+
+  const avg =
+    reviews.reduce((sum, r) => sum + (r.rating || 0), 0) / reviews.length;
+
+  await this.findByIdAndUpdate(productId, {
+    averageRating: avg.toFixed(1),
+    numOfReviews: reviews.length,
+  });
+};
 
 module.exports = mongoose.model("Product", productSchema);

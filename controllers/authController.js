@@ -38,6 +38,8 @@ exports.signUpUser = async (req, res, next) => {
       email,
       password,
       address,
+      userAvatar,
+      userBanner,
     } = req.body;
 
     // Check for existing email
@@ -67,6 +69,8 @@ exports.signUpUser = async (req, res, next) => {
       email,
       address,
       password: hashedPassword,
+      userAvatar,
+      userBanner,
     });
 
     // Create empty cart for new user

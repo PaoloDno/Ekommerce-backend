@@ -127,6 +127,8 @@ exports.getProducts = async (req, res) => {
     const total = await Product.countDocuments(filter);
 
     res.status(200).json({
+      success: true,
+      message: "products fetched",
       total,
       page: pageNum,
       pages: Math.ceil(total / limitNum),
@@ -139,9 +141,17 @@ exports.getProducts = async (req, res) => {
 
 exports.getProduct = async (req, res) => {
   try {
+    console.log("q");
     const product = await Product.findById(req.params.id)
       .populate("category", "name")
-      .populate("seller", "name");
+      .populate("seller", "name storeName email")
+      .populate({
+        path: "reviews",
+        populate: {
+          path: "user",
+          select: "username email userAvatar",
+        },
+      });
 
     if (!product) {
       const error = new Error("Product not found");
@@ -149,7 +159,12 @@ exports.getProduct = async (req, res) => {
       throw error;
     }
 
-    res.status(200).json(product);
+    console.log(product);
+    res.status(200).json({
+      success: true,
+      message: "User fetched successfully",
+      data: product,
+  });
   } catch (error) {
     next(error);
   }

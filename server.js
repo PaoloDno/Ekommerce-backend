@@ -17,7 +17,6 @@ const PRODUCTroute = require("./routes/productRoute.js");
 const ORDERroute = require("./routes/orderRoute.js");
 const REVIEWroute = require("./routes/reviewRoute.js");
 const SELLERroute = require("./routes/sellerRoute.js");
-const SellerModel = require('./models/SellerModel.js');
 
 
 const app = express()
@@ -49,7 +48,7 @@ app.use('/kommerce/cart', CARTroute);
 app.use('/kommerce/category', CATEGORYroute);
 app.use('/kommerce/product', PRODUCTroute);
 app.use('/kommerce/order', ORDERroute);
-app.use('/kommerce/reviews', REVIEWroute);
+app.use('/kommerce/review', REVIEWroute);
 app.use('/kommerce/store', SELLERroute);
 
 app.get('/', (req, res) => {

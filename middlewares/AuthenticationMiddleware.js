@@ -33,7 +33,7 @@ const authenticationMiddleware = async (req, res, next) => {
   } catch (error) {
     if (error instanceof jwt.TokenExpiredError) {
       error.statusCode = 401;
-      error.message = "Token expired. Please log in again.";
+      error.message = "Invalid token. Please log in again.";
     } else if (error instanceof jwt.JsonWebTokenError) {
       error.statusCode = 401;
       error.message = "Invalid token. Access denied.";

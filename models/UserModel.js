@@ -8,6 +8,7 @@ const userSchema = new mongoose.Schema({
   email: { type: String, unique: true, required: true },
   password: { type: String, required: true },
   userAvatar: {type: String, default: "A1"},
+  userBanner: {type: String, default: "B2"},
   storeName: {type: String, default: null},
 
   userTheme: {type: String, default: "default"},

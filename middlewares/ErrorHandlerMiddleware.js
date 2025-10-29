@@ -1,4 +1,4 @@
-const errorHandler = (err, res) => {
+const errorHandler = (err, req, res, next) => {
   const isDev = process.env.NODE_ENV === "development";
 
   // Default values
