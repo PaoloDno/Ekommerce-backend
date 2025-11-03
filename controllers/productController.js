@@ -139,7 +139,7 @@ exports.getProducts = async (req, res) => {
   }
 };
 
-exports.getProduct = async (req, res) => {
+exports.getProduct = async (req, res, next) => {
   try {
     console.log("q");
     const product = await Product.findById(req.params.id)

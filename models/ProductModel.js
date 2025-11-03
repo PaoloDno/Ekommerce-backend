@@ -46,23 +46,32 @@ const productSchema = new mongoose.Schema(
 
 productSchema.statics.updateProductRating = async function (productId) {
   const Review = mongoose.model("Review");
+  const Seller = mongoose.model("Seller");
+
+  const product = await this.findById(productId);
+  if (!product) return;
 
   const reviews = await Review.find({ product: productId });
+
   if (reviews.length === 0) {
     await this.findByIdAndUpdate(productId, {
       averageRating: 0,
       numOfReviews: 0,
     });
-    return;
+  } else {
+    const avg =
+      reviews.reduce((sum, r) => sum + (r.rating || 0), 0) / reviews.length;
+
+    await this.findByIdAndUpdate(productId, {
+      averageRating: avg.toFixed(1),
+      numOfReviews: reviews.length,
+    });
   }
 
-  const avg =
-    reviews.reduce((sum, r) => sum + (r.rating || 0), 0) / reviews.length;
-
-  await this.findByIdAndUpdate(productId, {
-    averageRating: avg.toFixed(1),
-    numOfReviews: reviews.length,
-  });
+  if (product.seller) {
+    await Seller.updateSellerRating(product.seller);
+  }
 };
 
 module.exports = mongoose.model("Product", productSchema);
+

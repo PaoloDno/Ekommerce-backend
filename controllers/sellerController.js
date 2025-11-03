@@ -1,7 +1,6 @@
-
 const Seller = require("../models/SellerModel");
 const User = require("../models/UserModel");
-
+const Review = require("../models/ReviewModel.js");
 
 exports.createSeller = async (req, res, next) => {
   try {
@@ -48,9 +47,9 @@ exports.createSeller = async (req, res, next) => {
       sellerBanner,
       address,
     });
-    //save store
+
     await seller.save();
-    //save in user
+
     isOwnerExist.storeName = storeName;
     await isOwnerExist.save();
     res.status(201).json({ message: "Store saved!" });
@@ -63,22 +62,83 @@ exports.getOwnerStore = async (req, res, next) => {
   try {
     const { userId } = req.user;
 
-    const foundOwnerStore = await Seller.findOne({owner: userId})
-    .populate({
-        path: "products",         
-        model: "Product",         
-        select: "name price stock productImage images", 
-      });
-      
+    const foundOwnerStore = await Seller.findOne({ owner: userId }).populate({
+      path: "products",
+      model: "Product",
+      select: "name price stock productImage images averageRating",
+    });
+
     if (!foundOwnerStore) {
       const error = new Error("No Store");
       error.statusCode = 400;
       throw error;
     }
     console.log(foundOwnerStore);
+
+    const sellerProducts = foundOwnerStore.products.map((p) => p._id);
+
+    const top3 = await Review.find({ product: { $in: sellerProducts } })
+      .sort({ rating: -1 })
+      .limit(3)
+      .populate("user", "username");
+
+    const low3 = await Review.find({ product: { $in: sellerProducts } })
+      .sort({ rating: 1 })
+      .limit(3)
+      .populate("user", "username");
+
+    const storeData = {
+      ...foundOwnerStore.toObject(),
+      reviews: { top3, low3 },
+    };
     res.status(200).json({
       success: true,
-      data: foundOwnerStore,
+      data: storeData,
+      message: "Owner Store successfully fetch",
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+exports.getStoreId = async (req, res, next) => {
+  try {
+    const { storeId } = req.params;
+    console.log(storeId);
+    const foundStore = await Seller.findById(storeId).populate({
+      path: "products",
+      model: "Product",
+      select: "name price stock productImage images averageRating",
+    });
+    if (!foundStore) {
+      const error = new Error("Could'nt find Store");
+      error.statusCode = 400;
+      throw error;
+    }
+    console.log(foundStore);
+
+    const sellerProducts = foundStore.products.map((p) => p._id);
+
+    const top3 = await Review.find({ product: { $in: sellerProducts } })
+      .sort({ rating: -1 })
+      .limit(3)
+      .populate("user", "username");
+
+    const low3 = await Review.find({ product: { $in: sellerProducts } })
+      .sort({ rating: 1 })
+      .limit(3)
+      .populate("user", "username");
+
+    await Seller.updateSellerRating(foundStore.owner);
+
+    const storeData = {
+      ...foundStore.toObject(),
+      reviews: { top3, low3 },
+    };
+
+    res.status(200).json({
+      success: true,
+      data: storeData,
       message: "Owner Store successfully fetch",
     });
   } catch (error) {
