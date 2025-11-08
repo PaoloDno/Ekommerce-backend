@@ -18,3 +18,6 @@ exports.validateLogin = [
     .notEmpty().withMessage("Password is required")
     .isLength({ min: 8}).withMessage("atleast 8 character"),
 ];
+
+
+// uhmm too tiring

@@ -83,7 +83,7 @@ exports.getProducts = async (req, res) => {
       brand,
       minPrice,
       maxPrice,
-      sort = "createdAt", // default sort
+      sortBy = "createdAt", // default sort
       order = "desc", // asc or desc
       page = 1,
       limit = 10,

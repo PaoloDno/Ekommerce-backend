@@ -145,3 +145,38 @@ exports.getStoreId = async (req, res, next) => {
     next(error);
   }
 };
+
+exports.getStores = async (req, res, next) => {
+  try {
+    console.log("A");
+    const { isVerified } = req.query;
+    const { resultsPerPage, currentPage, skipDocuments, sortBy, sortOrder } = req.pagination;
+
+    const filter = {};
+    if (isVerified === "true") filter.isVerified = true;
+
+    const stores = await Seller.find(filter)
+      .select("-salesHistory")
+      .sort({ [sortBy]: sortOrder })
+      .skip(skipDocuments)
+      .limit(resultsPerPage);
+
+    console.log("yawaw");
+
+    const totalCounts = await Seller.countDocuments(filter);
+    console.log(stores);
+    res.json({
+      stores,
+      pagination: {
+        currentPage,
+        resultsPerPage,
+        totalPages: Math.ceil(totalCounts/ resultsPerPage),
+        totalCounts,
+        sortBy,
+        sortOrder: sortOrder === 1 ? "asc" : "desc",
+      },
+    })
+  } catch (error) {
+    next(error);
+  }
+};
