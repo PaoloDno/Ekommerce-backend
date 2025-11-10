@@ -148,34 +148,62 @@ exports.getStoreId = async (req, res, next) => {
 
 exports.getStores = async (req, res, next) => {
   try {
-    console.log("A");
-    const { isVerified } = req.query;
-    const { resultsPerPage, currentPage, skipDocuments, sortBy, sortOrder } = req.pagination;
+    const { storeName, isVerified, minrating, city, country } = req.query;
+    const { resultsPerPage, currentPage, skipDocuments, sortBy, sortOrder } =
+      req.pagination;
+
+    const allowedSorts = [
+      "createdAt",
+      "storeName",
+      "ratings.average",
+      "isVerified",
+    ];
+
+    const effectiveSortBy = allowedSorts.includes(sortBy)
+      ? sortBy
+      : "createdAt";
 
     const filter = {};
-    if (isVerified === "true") filter.isVerified = true;
+
+    if (isVerified === "true") {
+      filter.isVerified = true;
+    }
+
+    if (minrating) {
+      filter["ratings.average"] = { $gte: Number(minrating) };
+    }
+
+    if (storeName) {
+      filter.storeName = { $regex: storeName, $options: "i" };
+    }
+
+    if (city) {
+      filter.address.city = city;
+    }
+
+    if (country) {
+      filter.address.country = country;
+    }
 
     const stores = await Seller.find(filter)
       .select("-salesHistory")
-      .sort({ [sortBy]: sortOrder })
+      .sort({ [effectiveSortBy]: sortOrder })
       .skip(skipDocuments)
       .limit(resultsPerPage);
 
-    console.log("yawaw");
-
     const totalCounts = await Seller.countDocuments(filter);
-    console.log(stores);
+
     res.json({
       stores,
       pagination: {
         currentPage,
         resultsPerPage,
-        totalPages: Math.ceil(totalCounts/ resultsPerPage),
         totalCounts,
-        sortBy,
-        sortOrder: sortOrder === 1 ? "asc" : "desc",
+        totalPages: Math.ceil(totalCounts / resultsPerPage),
+        sortBy: effectiveSortBy,
+        sortOrder,
       },
-    })
+    });
   } catch (error) {
     next(error);
   }

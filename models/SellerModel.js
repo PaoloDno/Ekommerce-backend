@@ -7,7 +7,7 @@ const sellerSchema = new mongoose.Schema({
   phone: { type: String },
   description: { type: String },
 
-  sellerLogo: { type: String, default: "A1"},
+  sellerLogo: { type: String, default: "S1"},
   sellerBanner: { type: String, default: "B1"},
 
   address: {

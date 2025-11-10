@@ -78,62 +78,68 @@ exports.createProduct = async (req, res, next) => {
 exports.getProducts = async (req, res) => {
   try {
     const {
-      search,
-      category,
+      name,
       brand,
+      category,
+      seller,
       minPrice,
       maxPrice,
-      sortBy = "createdAt", // default sort
-      order = "desc", // asc or desc
-      page = 1,
-      limit = 10,
+      minRating
     } = req.query;
+
+    const { resultsPerPage, currentPage, skipDocuments, sortBy, sortOrder, } = req.pagination;
+
+    const allowedSorts = [
+      "createdAt",
+      "price",
+      "stock",
+      "averageRating",
+      "numOfReviews",
+    ];
+
+    const effectiveSortBy = allowedSorts.includes(sortBy)
+    ? sortBy
+    : "createdAt";
 
     let filter = {};
 
-    // Search by text
-    if (search) {
-      filter.$text = { $search: search };
+    if (name) {
+      filter.name = { $regex: name, $options: "i" };
     }
-
-    // Filter by category
-    if (category) filter.category = category;
-
-    // Filter by brand
     if (brand) filter.brand = brand;
-
-    // Price range
-    if (minPrice || maxPrice) {
-      filter.price = {};
-      if (minPrice) filter.price.$gte = Number(minPrice);
-      if (maxPrice) filter.price.$lte = Number(maxPrice);
+    if (category) filter.category = category;
+    if (seller) filter.seller = seller;
+    if (minPrice) {
+      filter.price = { ...filter.price, $gte: Number(minPrice) };
     }
 
-    // Pagination
-    const pageNum = Number(page) || 1;
-    const limitNum = Number(limit) || 10;
-    const skip = (pageNum - 1) * limitNum;
+    if (maxPrice) {
+      filter.price = { ...filter.price, $lte: Number(maxPrice) };
+    }
 
-    // Sorting
-    const sortOrder = order === "asc" ? 1 : -1;
+    if (minRating) {
+      filter.averageRating = { $gte: Number(minRating) };
+    }
+   const products = await Product.find(filter)
+      .select(" -reviews ")
+      .sort({ [effectiveSortBy]: sortOrder })
+      .skip(skipDocuments)
+      .limit(resultsPerPage);
 
-    const products = await Product.find(filter)
-      .populate("category", "name")
-      .populate("seller", "name")
-      .sort({ [sort]: sortOrder })
-      .skip(skip)
-      .limit(limitNum);
+    const totalCounts = await Product.countDocuments(filter);
 
-    const total = await Product.countDocuments(filter);
-
-    res.status(200).json({
-      success: true,
-      message: "products fetched",
-      total,
-      page: pageNum,
-      pages: Math.ceil(total / limitNum),
+    res.json({
       products,
+      pagination: {
+        currentPage,
+        resultsPerPage,
+        totalPages: Math.ceil(totalCounts / resultsPerPage),
+        totalCounts,
+        sortBy,
+        sortOrder: sortOrder === 1 ? "asc" : "desc"
+      }
     });
+
   } catch (error) {
     next(error);
   }
