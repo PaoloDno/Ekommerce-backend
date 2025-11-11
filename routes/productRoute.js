@@ -8,14 +8,16 @@ const {
   updateProduct,
   deleteProduct,
 } = require('../controllers/productController');
+const paginationMiddleware = require('../middlewares/PaginationMiddleware');
 
 const router = express.Router();
 
-router.get('/', getProducts);
+router.get('/', paginationMiddleware, getProducts);
 router.get('/:id', getProduct);
 
-router.post('/', createProduct);
+router.post('/', authenticationMiddleware, createProduct);
 router.put('/:id', updateProduct);
 router.delete('/:id', deleteProduct);
+
 
 module.exports = router;

@@ -122,12 +122,14 @@ exports.getStoreId = async (req, res, next) => {
     const top3 = await Review.find({ product: { $in: sellerProducts } })
       .sort({ rating: -1 })
       .limit(3)
-      .populate("user", "username");
+      .populate("user", "username userAvatar")
+      .populate("product", "name productImage");
 
     const low3 = await Review.find({ product: { $in: sellerProducts } })
       .sort({ rating: 1 })
       .limit(3)
-      .populate("user", "username");
+      .populate("user", "username userAvatar")
+      .populate("product", "name productImage");
 
     await Seller.updateSellerRating(foundStore.owner);
 
@@ -163,7 +165,11 @@ exports.getStores = async (req, res, next) => {
       ? sortBy
       : "createdAt";
 
-    const filter = {};
+    let filter = {};
+
+    if (storeName) {
+      filter.storeName = { $regex: storeName, $options: "i" };
+    }
 
     if (isVerified === "true") {
       filter.isVerified = true;
@@ -173,16 +179,12 @@ exports.getStores = async (req, res, next) => {
       filter["ratings.average"] = { $gte: Number(minrating) };
     }
 
-    if (storeName) {
-      filter.storeName = { $regex: storeName, $options: "i" };
-    }
+    const addressFilters = [];
+    if (city) addressFilters.push({ "address.city": city });
+    if (country) addressFilters.push({ "address.country": country });
 
-    if (city) {
-      filter.address.city = city;
-    }
-
-    if (country) {
-      filter.address.country = country;
+    if (addressFilters.length > 0) {
+      filter.$and = addressFilters;
     }
 
     const stores = await Seller.find(filter)

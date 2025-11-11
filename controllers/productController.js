@@ -22,7 +22,7 @@ exports.createProduct = async (req, res, next) => {
 
     console.log(req.body);
 
-     if (!name || !price || !category) {
+    if (!name || !price || !category) {
       const error = new Error("Required field is empty");
       error.statusCode = 400;
       throw error;
@@ -75,71 +75,125 @@ exports.createProduct = async (req, res, next) => {
   }
 };
 
-exports.getProducts = async (req, res) => {
+exports.getProducts = async (req, res, next) => {
   try {
     const {
       name,
       brand,
-      category,
-      seller,
+      categoryName,
+      storeName,
       minPrice,
       maxPrice,
-      minRating
+      minRating,
     } = req.query;
 
-    const { resultsPerPage, currentPage, skipDocuments, sortBy, sortOrder, } = req.pagination;
+    const { resultsPerPage, currentPage, skipDocuments, sortBy, sortOrder } =
+      req.pagination;
 
     const allowedSorts = [
       "createdAt",
+      "name",
       "price",
       "stock",
       "averageRating",
       "numOfReviews",
+      "storeName",
+      "categoryName",
     ];
 
-    const effectiveSortBy = allowedSorts.includes(sortBy)
-    ? sortBy
-    : "createdAt";
+    const effectiveSort = allowedSorts.includes(sortBy) ? sortBy : "createdAt";
 
     let filter = {};
 
-    if (name) {
-      filter.name = { $regex: name, $options: "i" };
-    }
+    if (name) filter.name = { $regex: name, $options: "i" };
     if (brand) filter.brand = brand;
-    if (category) filter.category = category;
-    if (seller) filter.seller = seller;
-    if (minPrice) {
-      filter.price = { ...filter.price, $gte: Number(minPrice) };
-    }
 
-    if (maxPrice) {
-      filter.price = { ...filter.price, $lte: Number(maxPrice) };
-    }
+    if (minPrice) filter.price = { ...filter.price, $gte: Number(minPrice) };
 
-    if (minRating) {
-      filter.averageRating = { $gte: Number(minRating) };
-    }
-   const products = await Product.find(filter)
-      .select(" -reviews ")
-      .sort({ [effectiveSortBy]: sortOrder })
+    if (maxPrice) filter.price = { ...filter.price, $lte: Number(maxPrice) };
+
+    if (minRating) filter.averageRating = { $gte: Number(minRating) };
+
+    let countQuery = Product.find(filter)
+      .populate({
+        path: "seller",
+        select: "storeName",
+        match: storeName
+          ? { storeName: { $regex: storeName, $options: "i" } }
+          : {},
+      })
+      .populate({
+        path: "category",
+        select: "name",
+        match: categoryName
+          ? { name: { $regex: categoryName, $options: "i" } }
+          : {},
+      });
+
+    let countResults = await countQuery;
+
+    countResults = countResults.filter(
+      (p) => (!storeName || p.seller) && (!categoryName || p.category)
+    );
+
+    const totalCounts = countResults.length;
+    const totalPages = Math.ceil(totalCounts / resultsPerPage);
+
+    let productsQuery = Product.find(filter)
+      .select("-reviews")
+      .populate({
+        path: "seller",
+        select: "storeName",
+        match: storeName
+          ? { storeName: { $regex: storeName, $options: "i" } }
+          : {},
+      })
+      .populate({
+        path: "category",
+        select: "name",
+        match: categoryName
+          ? { name: { $regex: categoryName, $options: "i" } }
+          : {},
+      });
+
+    let products = await productsQuery
       .skip(skipDocuments)
       .limit(resultsPerPage);
 
-    const totalCounts = await Product.countDocuments(filter);
+    products = products.filter(
+      (p) => (!storeName || p.seller) && (!categoryName || p.category)
+    );
+
+    if (!["storeName", "categoryName"].includes(effectiveSort)) {
+      productsQuery = productsQuery.sort({ [effectiveSort]: sortOrder });
+    }
+    if (effectiveSort === "storeName") {
+      products.sort(
+        (a, b) =>
+          a.seller.storeName.localeCompare(b.seller.storeName) *
+          (sortOrder === -1 ? -1 : 1)
+      );
+    }
+
+    if (effectiveSort === "categoryName") {
+      products.sort(
+        (a, b) =>
+          a.category.name.localeCompare(b.category.name) *
+          (sortOrder === -1 ? -1 : 1)
+      );
+    }
 
     res.json({
       products,
       pagination: {
         currentPage,
         resultsPerPage,
-        totalPages: Math.ceil(totalCounts / resultsPerPage),
         totalCounts,
-        sortBy,
-        sortOrder: sortOrder === 1 ? "asc" : "desc"
-      }
+        totalPages,
+        sortBy: effectiveSort,
+        sortOrder: sortOrder === 1 ? "asc" : "desc",
+      },
     });
-
   } catch (error) {
     next(error);
   }
@@ -170,7 +224,7 @@ exports.getProduct = async (req, res, next) => {
       success: true,
       message: "User fetched successfully",
       data: product,
-  });
+    });
   } catch (error) {
     next(error);
   }
