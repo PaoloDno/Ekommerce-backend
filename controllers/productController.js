@@ -90,6 +90,7 @@ exports.getProducts = async (req, res, next) => {
     const { resultsPerPage, currentPage, skipDocuments, sortBy, sortOrder } =
       req.pagination;
 
+    console.log(req.pagination);
     const allowedSorts = [
       "createdAt",
       "name",
@@ -101,8 +102,11 @@ exports.getProducts = async (req, res, next) => {
       "categoryName",
     ];
 
+    
+
     const effectiveSort = allowedSorts.includes(sortBy) ? sortBy : "createdAt";
 
+    console.log(effectiveSort);
     let filter = {};
 
     if (name) filter.name = { $regex: name, $options: "i" };
@@ -179,10 +183,11 @@ exports.getProducts = async (req, res, next) => {
       products.sort(
         (a, b) =>
           a.category.name.localeCompare(b.category.name) *
-          (sortOrder === -1 ? -1 : 1)
+          (sortOrder === "desc" ? -1 : 1)
       );
     }
-
+    console.log(effectiveSort);
+    //console.log(products);
     res.json({
       products,
       pagination: {
