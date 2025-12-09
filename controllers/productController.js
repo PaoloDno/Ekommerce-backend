@@ -87,10 +87,14 @@ exports.getProducts = async (req, res, next) => {
       minRating,
     } = req.query;
 
-    const { resultsPerPage, currentPage, skipDocuments, sortBy, sortOrder } =
-      req.pagination;
+    const {
+      resultsPerPage,
+      currentPage,
+      skipDocuments,
+      sortBy,
+      sortOrder,
+    } = req.pagination;
 
-    console.log(req.pagination);
     const allowedSorts = [
       "createdAt",
       "name",
@@ -102,48 +106,25 @@ exports.getProducts = async (req, res, next) => {
       "categoryName",
     ];
 
-    
+    const effectiveSort = allowedSorts.includes(sortBy)
+      ? sortBy
+      : "createdAt";
 
-    const effectiveSort = allowedSorts.includes(sortBy) ? sortBy : "createdAt";
-
-    console.log(effectiveSort);
     let filter = {};
 
     if (name) filter.name = { $regex: name, $options: "i" };
     if (brand) filter.brand = brand;
 
-    if (minPrice) filter.price = { ...filter.price, $gte: Number(minPrice) };
+    if (minPrice)
+      filter.price = { ...filter.price, $gte: Number(minPrice) };
 
-    if (maxPrice) filter.price = { ...filter.price, $lte: Number(maxPrice) };
+    if (maxPrice)
+      filter.price = { ...filter.price, $lte: Number(maxPrice) };
 
-    if (minRating) filter.averageRating = { $gte: Number(minRating) };
+    if (minRating)
+      filter.averageRating = { $gte: Number(minRating) };
 
-    let countQuery = Product.find(filter)
-      .populate({
-        path: "seller",
-        select: "storeName",
-        match: storeName
-          ? { storeName: { $regex: storeName, $options: "i" } }
-          : {},
-      })
-      .populate({
-        path: "category",
-        select: "name",
-        match: categoryName
-          ? { name: { $regex: categoryName, $options: "i" } }
-          : {},
-      });
-
-    let countResults = await countQuery;
-
-    countResults = countResults.filter(
-      (p) => (!storeName || p.seller) && (!categoryName || p.category)
-    );
-
-    const totalCounts = countResults.length;
-    const totalPages = Math.ceil(totalCounts / resultsPerPage);
-
-    let productsQuery = Product.find(filter)
+    let allProducts = await Product.find(filter)
       .select("-reviews")
       .populate({
         path: "seller",
@@ -160,34 +141,41 @@ exports.getProducts = async (req, res, next) => {
           : {},
       });
 
-    let products = await productsQuery
-      .skip(skipDocuments)
-      .limit(resultsPerPage);
-
-    products = products.filter(
+    allProducts = allProducts.filter(
       (p) => (!storeName || p.seller) && (!categoryName || p.category)
     );
 
-    if (!["storeName", "categoryName"].includes(effectiveSort)) {
-      productsQuery = productsQuery.sort({ [effectiveSort]: sortOrder });
-    }
+    const direction = sortOrder === -1 ? -1 : 1;
+
     if (effectiveSort === "storeName") {
-      products.sort(
+      allProducts.sort(
         (a, b) =>
           a.seller.storeName.localeCompare(b.seller.storeName) *
-          (sortOrder === -1 ? -1 : 1)
+          direction
       );
-    }
-
-    if (effectiveSort === "categoryName") {
-      products.sort(
+    } else if (effectiveSort === "categoryName") {
+      allProducts.sort(
         (a, b) =>
           a.category.name.localeCompare(b.category.name) *
-          (sortOrder === "desc" ? -1 : 1)
+          direction
       );
+    } else {
+      allProducts.sort((a, b) => {
+        if (a[effectiveSort] > b[effectiveSort]) return 1 * direction;
+        if (a[effectiveSort] < b[effectiveSort]) return -1 * direction;
+        return 0;
+      });
     }
-    console.log(effectiveSort);
-    //console.log(products);
+
+    const totalCounts = allProducts.length;
+    const totalPages = Math.ceil(totalCounts / resultsPerPage);
+
+    const products = allProducts.slice(
+      skipDocuments,
+      skipDocuments + resultsPerPage
+    );
+
+ 
     res.json({
       products,
       pagination: {
@@ -196,13 +184,14 @@ exports.getProducts = async (req, res, next) => {
         totalCounts,
         totalPages,
         sortBy: effectiveSort,
-        sortOrder: sortOrder === 1 ? "asc" : "desc",
+        sortOrder: direction === 1 ? "asc" : "desc",
       },
     });
   } catch (error) {
     next(error);
   }
 };
+
 
 exports.getProduct = async (req, res, next) => {
   try {

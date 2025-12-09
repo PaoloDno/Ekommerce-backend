@@ -151,8 +151,13 @@ exports.getStoreId = async (req, res, next) => {
 exports.getStores = async (req, res, next) => {
   try {
     const { storeName, isVerified, minrating, city, country } = req.query;
-    const { resultsPerPage, currentPage, skipDocuments, sortBy, sortOrder } =
-      req.pagination;
+    const {
+      resultsPerPage,
+      currentPage,
+      skipDocuments,
+      sortBy,
+      sortOrder,
+    } = req.pagination;
 
     const allowedSorts = [
       "createdAt",
@@ -187,13 +192,33 @@ exports.getStores = async (req, res, next) => {
       filter.$and = addressFilters;
     }
 
-    const stores = await Seller.find(filter)
-      .select("-salesHistory")
-      .sort({ [effectiveSortBy]: sortOrder })
-      .skip(skipDocuments)
-      .limit(resultsPerPage);
+    let allStores = await Seller.find(filter).select("-salesHistory");
 
-    const totalCounts = await Seller.countDocuments(filter);
+    const direction = sortOrder === -1 ? -1 : 1;
+
+    allStores.sort((a, b) => {
+      let aVal, bVal;
+
+      if (effectiveSortBy === "ratings.average") {
+        aVal = a.ratings?.average || 0;
+        bVal = b.ratings?.average || 0;
+      } else {
+        aVal = a[effectiveSortBy];
+        bVal = b[effectiveSortBy];
+      }
+
+      if (aVal > bVal) return 1 * direction;
+      if (aVal < bVal) return -1 * direction;
+      return 0;
+    });
+
+    const totalCounts = allStores.length;
+    const totalPages = Math.ceil(totalCounts / resultsPerPage);
+
+    const stores = allStores.slice(
+      skipDocuments,
+      skipDocuments + resultsPerPage
+    );
 
     res.json({
       stores,
@@ -201,9 +226,9 @@ exports.getStores = async (req, res, next) => {
         currentPage,
         resultsPerPage,
         totalCounts,
-        totalPages: Math.ceil(totalCounts / resultsPerPage),
+        totalPages,
         sortBy: effectiveSortBy,
-        sortOrder,
+        sortOrder: direction === 1 ? "asc" : "desc",
       },
     });
   } catch (error) {

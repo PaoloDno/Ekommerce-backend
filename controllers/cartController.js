@@ -3,9 +3,14 @@ const Product = require("../models/ProductModel.js");
 const Order = require("../models/OrderModel.js");
 
 exports.getCart = async (req, res, next) => {
+
+  const { userId } = req.user;
+
   try {
-    const cart = await Cart.findOne({ user: req.user.id })
-      .populate("items.product", "name price productImage stock averageRating");
+    const cart = await Cart.findOne({ user: userId }).populate(
+      "items.product",
+      "name price productImage stock averageRating"
+    );
 
     if (!cart) {
       const error = new Error("Cart not found for this user");
@@ -21,7 +26,14 @@ exports.getCart = async (req, res, next) => {
       (count, item) => count + item.quantity,
       0
     );
-
+    console.log("asdasdasdsa cart succesffuly");
+    console.log( "Cart fetched successfully:",
+      cart,
+      "totalprice",
+      totalPrice,
+      "totalItems",
+      totalItems,
+    )
     res.status(200).json({
       success: true,
       message: "Cart fetched successfully",
@@ -33,7 +45,6 @@ exports.getCart = async (req, res, next) => {
     next(error);
   }
 };
-
 
 exports.addToCart = async (req, res, next) => {
   try {
@@ -60,13 +71,14 @@ exports.addToCart = async (req, res, next) => {
       );
 
       if (itemIndex > -1) {
-        cart.items[itemIndex].quantity += quantity;
+        cart.items[itemIndex].quantity = quantity;
       } else {
-        cart.items.push({ 
+        cart.items.push({
           product: productId,
           name: product.name,
           price: product.price,
-          quantity, });
+          quantity,
+        });
       }
       await cart.save();
     }
@@ -86,13 +98,18 @@ exports.removeFromCart = async (req, res, next) => {
     const { userId } = req.user;
     const { productId } = req.params;
 
+    console.log("A laundry day");
+    console.log(productId);
+
     const cart = await Cart.findOne({ user: userId });
     if (!cart) {
       const error = new Error("Cart not found");
       error.statusCode = 404;
       throw error;
     }
-
+    console.log("cart:", cart);
+    console.log("cart.items", cart.items);
+    console.log(productId);
     cart.items = cart.items.filter(
       (item) => item.product.toString() !== productId
     );
@@ -107,7 +124,6 @@ exports.removeFromCart = async (req, res, next) => {
     next(error);
   }
 };
-
 
 exports.clearCart = async (req, res, next) => {
   try {
@@ -124,6 +140,8 @@ exports.clearCart = async (req, res, next) => {
 };
 
 
+
+
 exports.checkOutCart = async (req, res, next) => {
   const session = await mongoose.startSession();
 
@@ -135,17 +153,20 @@ exports.checkOutCart = async (req, res, next) => {
 
     if (!cart || cart.items.length === 0) {
       await session.abortTransaction();
-      return res.status(400).json({ success: false, message: "Cart is empty" });
+      const error = new Error("Cart Not Found");
+      error.statusCode = 400;
+      throw error;
     }
 
     // Step 1: Fetch products
     const productIds = cart.items.map((item) => item.product);
-    const products = await Product.find({ _id: { $in: productIds } }).session(session);
-
+    const products = await Product.find({ _id: { $in: productIds } }).session(
+      session
+    );
 
     /*If the field holds an array, then the $in operator selects the documents whose field holds an array that contains at least one element that matches a value in the specified array (for example, <value1>, <value2>, and so on). */
 
-     const insufficientStock = [];
+    const insufficientStock = [];
     for (const item of cart.items) {
       const product = products.find(
         (p) => p._id.toString() === item.product.toString()
@@ -170,15 +191,14 @@ exports.checkOutCart = async (req, res, next) => {
 
     if (insufficientStock.length > 0) {
       await session.abortTransaction();
-      return res.status(400).json({
-        success: false,
-        message: "Some products are unavailable or low on stock",
-        insufficientStock,
-      });
+      console.log("insufficient:", insufficientStock);
+      const error = new Error("Some products are unavailable or low on stock.");
+      error.statusCode = 400;
+      throw error;
     }
-    // insufficientStocks = [{stock: -1}}{}]
+    // insufficientStocks = [{stock: -1}}{}] abort session
 
-     // Step 3: Calculate totals
+    // Step 3: Calculate totals
     let itemTotalPrice = 0;
     for (const item of cart.items) {
       const product = products.find(
@@ -192,6 +212,7 @@ exports.checkOutCart = async (req, res, next) => {
     const totalSum = itemTotalPrice + shippingFee;
 
     // Step 4: Bulk update product stock
+    // Model.bulkWrite(operations, options, callback)
     const bulkOps = cart.items.map((item) => ({
       updateOne: {
         filter: { _id: item.product },
@@ -199,8 +220,10 @@ exports.checkOutCart = async (req, res, next) => {
       },
     }));
     await Product.bulkWrite(bulkOps, { session });
+    // updateOne search one
 
-    /* Step 5: Create Order Ongoing
+    // Step 5: Create Order Ongoing
+
     const order = await Order.create(
       [
         {
@@ -216,12 +239,9 @@ exports.checkOutCart = async (req, res, next) => {
       { session }
     );
 
-    */
-
     // Step 6: Delete Cart
     await Cart.findOneAndDelete({ user: userId }).session(session);
 
-    // ✅ Step 7: Commit all changes
     await session.commitTransaction();
     session.endSession();
 

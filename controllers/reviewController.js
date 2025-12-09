@@ -6,7 +6,7 @@ const Seller = require("../models/SellerModel.js");
 exports.createReview = async (req, res, next) => {
   try {
     const { productId, rating, comment } = req.body;
-    const {userId} = req.user; // unified
+    const { userId } = req.user;
 
     const product = await Product.findById(productId);
     if (!product) {
@@ -16,33 +16,41 @@ exports.createReview = async (req, res, next) => {
     }
 
     const existingReview = await Review.findOne({ product: productId, user: userId });
+
+    let review;
+
     if (existingReview) {
-      const error = new Error("You have already reviewed this product.");
-      error.statusCode = 400;
-      throw error;
+      existingReview.rating = rating;
+      existingReview.comment = comment;
+      existingReview.updatedAt = new Date();
+
+      review = await existingReview.save();
+
+    } else {
+      review = new Review({
+        product: productId,
+        user: userId,
+        rating,
+        comment,
+      });
+      await review.save();
+
+      await Promise.all([
+        Product.findByIdAndUpdate(productId, { $push: { reviews: review._id } }),
+        User.findByIdAndUpdate(userId, {
+          $push: { reviewHistory: { product: productId, review: review._id } },
+        })
+      ]);
     }
-
-    const review = new Review({
-      product: productId,
-      user: userId,
-      rating,
-      comment,
-    });
-    await review.save();
-
-    await Promise.all([
-      Product.findByIdAndUpdate(productId, { $push: { reviews: review._id } }),
-      User.findByIdAndUpdate(userId, {
-        $push: { reviewHistory: { product: productId, review: review._id } },
-      }),
-    ]);
 
     await Product.updateProductRating(productId);
     await Seller.updateSellerRating(userId);
 
-    res.status(201).json({
+     res.status(existingReview ? 200 : 201).json({
       success: true,
-      message: "Review created successfully.",
+      message: existingReview 
+        ? "Review updated successfully." 
+        : "Review created successfully.",
       review,
     });
   } catch (error) {
@@ -66,6 +74,7 @@ exports.getProductReview = async (req, res, next) => {
   }
 };
 
+/*
 exports.updateReview = async (req, res, next) => {
   try {
     const { rating, comment } = req.body;
@@ -96,7 +105,11 @@ exports.updateReview = async (req, res, next) => {
   }
 };
 
+*/
+
 exports.deleteReview = async (req, res, next) => {
+  const {userId} = req.user;
+
   try {
     const review = await Review.findOneAndDelete({
       _id: req.params.id,
@@ -117,6 +130,7 @@ exports.deleteReview = async (req, res, next) => {
     ]);
 
     await Product.updateProductRating(review.product);
+    await Seller.updateSellerRating(userId);
 
     res.status(200).json({
       success: true,
