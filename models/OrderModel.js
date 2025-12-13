@@ -24,13 +24,6 @@ const orderSchema = new mongoose.Schema(
       postalCode: { type: String },
     },
 
-    sellerAddress: {
-      street: { type: String },
-      city: { type: String },
-      country: { type: String },
-      postalCode: { type: String },
-    },
-
     shippingFee: { type: Number, default: 0 },
     itemTotalPrice: { type: Number, required: true },
     totalSum: { type: Number, required: true },

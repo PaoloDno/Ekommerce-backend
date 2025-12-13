@@ -77,20 +77,13 @@ exports.signUpUser = async (req, res, next) => {
     await Cart.create({ user: newUser._id, items: [] });
 
     const token = generateToken(newUser);
-    const cart = await Cart.findOne({ userId: newUser._id });
-    const totalItems = cart
-      ? cart.items.reduce((sum, item) => sum + item.quantity, 0)
-      : 0;
-
+    
     // Send response
     res.status(200).json({
       success: true,
       message: "Login successful",
       username,
       token,
-      cartSummary: {
-        totalItems,
-      },
     });
   } catch (error) {
     console.log(error);
@@ -132,20 +125,13 @@ exports.logInUser = async (req, res, next) => {
 
     const token = generateToken(user);
 
-    const cart = await Cart.findOne({ userId: user._id });
-    const totalItems = cart
-      ? cart.items.reduce((sum, item) => sum + item.quantity, 0)
-      : 0;
 
     // Send response
     res.status(200).json({
       success: true,
       message: "Login successful",
       username,
-      token,
-      cartSummary: {
-        totalItems,
-      },
+      token
     });
   } catch (error) {
     next(error);

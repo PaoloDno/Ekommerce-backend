@@ -17,3 +17,34 @@ router.get("/get-user-profile", authenticationMiddleware, getUserProfile);
 router.put("/theme", authenticationMiddleware, selectorTheme);
 
 module.exports = router;
+
+/**
+ * login =>
+ * cartSummary = 0 not initiated properly
+ * message: Login successfully
+ * token: token
+ * username: username
+ * 
+ * get-user-profile =>
+ * return {
+ *  data = {
+ *    address [] = {city, country, postalcode, street, _id}
+ *    email: email,
+ *    firstname,
+ *    isAdmin,
+ *    lastname,
+ *    middllename,
+ *    orderHistory,
+ *    reviewHistory: [] this is too many not gonnna lie
+ *    storeName,
+ *    userAvatar,
+ *    userTheme,
+ *    username
+ *    id
+ *  },
+ *  message: success
+ *  success: true
+ *  // should have learned postman
+ * }
+ * 
+ */

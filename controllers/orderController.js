@@ -1,17 +1,24 @@
 const Order = require("../models/OrderModel.js");
 const User = require("../models/UserModel.js");
-
-exports.createOrder = async( req, res, next) => {
+const Notification = require("../models/NotificationModel.js");
+const Cart = require("../models/CartModel.js");
+// --------------------------------------------------
+// CREATE ORDER
+// --------------------------------------------------
+exports.createOrder = async (req, res, next) => {
   try {
-    const userId = req.user?.id || req.body.userId; // fallback if no auth middleware
+    const userId = req.user?.id || req.body.userId;
 
-    if (!userId || !items?.length || !totalPrice) {
+    // Pull values from body safely
+    const { items, totalPrice, shippingAddress } = req.body;
+
+    if (!userId || !items?.length || !totalPrice || !shippingAddress) {
       const error = new Error("Missing required order fields");
       error.statusCode = 400;
       throw error;
     }
 
-    // Create new order
+    // Create the order
     const newOrder = await Order.create({
       user: userId,
       items,
@@ -19,7 +26,7 @@ exports.createOrder = async( req, res, next) => {
       shippingAddress,
     });
 
-    // Add to user history
+    // Add to user order history
     await User.findByIdAndUpdate(userId, {
       $push: {
         orderhistory: {
@@ -28,6 +35,24 @@ exports.createOrder = async( req, res, next) => {
         },
       },
     });
+
+    // Notify the user
+    await Notification.create({
+      userId,
+      role: "user",
+      message: `Order placed successfully! Order #${newOrder._id}.`,
+    });
+
+    // Notify the seller (if any)
+    if (sellerId) {
+      await Notification.create({
+        userId: sellerId,
+        role: "seller",
+        message: `A new order (#${newOrder._id}) was placed.`,
+      });
+    }
+
+    await Cart.findOneAndDelete({ user: userId });
 
     res.status(201).json({
       success: true,
@@ -39,15 +64,16 @@ exports.createOrder = async( req, res, next) => {
   }
 };
 
-
-// get all orders of a user
-
+// --------------------------------------------------
+// GET ALL ORDERS OF A USER
+// --------------------------------------------------
 exports.getUserOrders = async (req, res, next) => {
   try {
     const userId = req.user?.id || req.query.userId;
 
     const orders = await Order.find({ user: userId })
       .populate("items.product")
+      .populate("seller", "storeName firstname lastname")
       .sort({ createdAt: -1 });
 
     res.status(200).json({
@@ -59,15 +85,17 @@ exports.getUserOrders = async (req, res, next) => {
   }
 };
 
-//get single order
-
+// --------------------------------------------------
+// GET SINGLE ORDER
+// --------------------------------------------------
 exports.getOrderById = async (req, res, next) => {
   try {
     const { orderId } = req.params;
 
     const order = await Order.findById(orderId)
       .populate("user", "username email")
-      .populate("items.product");
+      .populate("items.product")
+      .populate("seller", "storeName firstname lastname");
 
     if (!order) {
       const error = new Error("Order not found");
@@ -75,20 +103,32 @@ exports.getOrderById = async (req, res, next) => {
       throw error;
     }
 
-    res.status(200).json({ success: true, order });
+    res.status(200).json({
+      success: true,
+      order,
+    });
   } catch (error) {
     next(error);
   }
 };
 
-// update Order Status
-
+// --------------------------------------------------
+// UPDATE ORDER STATUS (SELLER OR ADMIN)
+// --------------------------------------------------
 exports.updateOrderStatus = async (req, res, next) => {
   try {
     const { orderId } = req.params;
     const { status } = req.body;
 
-    if (!["pending", "paid", "shipped", "delivered", "cancelled"].includes(status)) {
+    const validStatus = [
+      "pending",
+      "paid",
+      "shipped",
+      "delivered",
+      "cancelled",
+    ];
+
+    if (!validStatus.includes(status)) {
       const error = new Error("Invalid order status");
       error.statusCode = 400;
       throw error;
@@ -98,12 +138,28 @@ exports.updateOrderStatus = async (req, res, next) => {
       orderId,
       { status },
       { new: true }
-    );
+    ).populate("user seller");
 
     if (!updatedOrder) {
       const error = new Error("Order not found");
       error.statusCode = 404;
       throw error;
+    }
+
+    // Notify user
+    await Notification.create({
+      userId: updatedOrder.user._id,
+      role: "user",
+      message: `Your order #${updatedOrder._id} status is now: "${status}".`,
+    });
+
+    // Notify seller (only if exists)
+    if (updatedOrder.seller) {
+      await Notification.create({
+        userId: updatedOrder.seller._id,
+        role: "seller",
+        message: `Order #${updatedOrder._id} has been updated to "${status}".`,
+      });
     }
 
     res.status(200).json({
