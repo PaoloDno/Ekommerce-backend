@@ -18,6 +18,21 @@ const generateToken = (user) => {
   );
 };
 
+const formatUserProfile = (user) => ({
+  _id: user._id,
+  username: user.username,
+  email: user.email,
+  firstname: user.firstname,
+  lastname: user.lastname,
+  middlename: user.middlename,
+  address: user.address,
+  userAvatar: user.userAvatar,
+  userBanner: user.userBanner,
+  userTheme: user.userTheme || "default",
+  isAdmin: user.isAdmin,
+});
+
+
 exports.signUpUser = async (req, res, next) => {
   try {
     console.log("signing up");
@@ -84,6 +99,7 @@ exports.signUpUser = async (req, res, next) => {
       message: "Login successful",
       username,
       token,
+      profile: formatUserProfile(newUser),
     });
   } catch (error) {
     console.log(error);
@@ -131,7 +147,8 @@ exports.logInUser = async (req, res, next) => {
       success: true,
       message: "Login successful",
       username,
-      token
+      token,
+       profile: formatUserProfile(user),
     });
   } catch (error) {
     next(error);

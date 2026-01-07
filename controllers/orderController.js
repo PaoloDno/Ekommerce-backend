@@ -1,32 +1,52 @@
-const Order = require("../models/OrderModel.js");
-const User = require("../models/UserModel.js");
-const Notification = require("../models/NotificationModel.js");
-const Cart = require("../models/CartModel.js");
+const Order = require("../models/OrderModel");
+const User = require("../models/UserModel");
+const Notification = require("../models/NotificationModel");
+const Cart = require("../models/CartModel");
+const Product = require("../models/ProductModel");
+// utils
+const sendNotification = require("../utils/sendNotification");
 // --------------------------------------------------
 // CREATE ORDER
 // --------------------------------------------------
 exports.createOrder = async (req, res, next) => {
   try {
-    const userId = req.user?.id || req.body.userId;
+    const { userId } = req.user;
 
-    // Pull values from body safely
-    const { items, totalPrice, shippingAddress } = req.body;
+    const { items, itemTotalPrice, shippingFee, totalSum, shippingAddress } =
+      req.body;
 
-    if (!userId || !items?.length || !totalPrice || !shippingAddress) {
-      const error = new Error("Missing required order fields");
-      error.statusCode = 400;
-      throw error;
+    // -------------------------------
+    // VALIDATION
+    // -------------------------------
+    if (
+      !userId ||
+      !Array.isArray(items) ||
+      items.length === 0 ||
+      !totalSum ||
+      !shippingAddress
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "Missing required order fields",
+      });
     }
 
-    // Create the order
+    // -------------------------------
+    // CREATE ORDER
+    // -------------------------------
     const newOrder = await Order.create({
       user: userId,
       items,
-      totalPrice,
+      itemTotalPrice,
+      shippingFee,
+      totalSum,
       shippingAddress,
+      status: "pending",
     });
 
-    // Add to user order history
+    // -------------------------------
+    // ADD TO USER ORDER HISTORY
+    // -------------------------------
     await User.findByIdAndUpdate(userId, {
       $push: {
         orderhistory: {
@@ -36,24 +56,59 @@ exports.createOrder = async (req, res, next) => {
       },
     });
 
-    // Notify the user
-    await Notification.create({
+    // -------------------------------
+    // USER NOTIFICATION
+    // -------------------------------
+    await sendNotification({
       userId,
       role: "user",
-      message: `Order placed successfully! Order #${newOrder._id}.`,
+      subject: `Pending Order #${newOrder._id}`,
+      message: "Order placed successfully.",
+      link: `/orders/${newOrder._id}`,
     });
 
-    // Notify the seller (if any)
-    if (sellerId) {
-      await Notification.create({
-        userId: sellerId,
+    // -------------------------------
+    // RESOLVE UNIQUE SELLERS (OPTIMIZED)
+    // -------------------------------
+    const productIds = items.map((i) => i.product);
+
+    const products = await Product.find({ _id: { $in: productIds } }).populate({
+      path: "seller",
+      populate: { path: "owner" },
+    });
+
+    const storeOwners = new Map();
+
+    for (const product of products) {
+      if (product?.seller?.owner) {
+        storeOwners.set(
+          product.seller.owner._id.toString(),
+          product.seller.owner
+        );
+      }
+    }
+
+    // -------------------------------
+    // SELLER NOTIFICATIONS
+    // -------------------------------
+    for (const owner of storeOwners.values()) {
+      await sendNotification({
+        userId: owner._id,
         role: "seller",
-        message: `A new order (#${newOrder._id}) was placed.`,
+        subject: "New Order Received",
+        message: `Order #${newOrder._id} includes your product(s).`,
+        link: `/seller/orders/${newOrder._id}`,
       });
     }
 
+    // -------------------------------
+    // CLEAR CART
+    // -------------------------------
     await Cart.findOneAndDelete({ user: userId });
 
+    // -------------------------------
+    // RESPONSE
+    // -------------------------------
     res.status(201).json({
       success: true,
       message: "Order placed successfully",
@@ -69,11 +124,23 @@ exports.createOrder = async (req, res, next) => {
 // --------------------------------------------------
 exports.getUserOrders = async (req, res, next) => {
   try {
-    const userId = req.user?.id || req.query.userId;
+    const { userId } = req.user;
+
+    if (!userId) {
+      return res.status(401).json({
+        success: false,
+        message: "Unauthorized",
+      });
+    }
 
     const orders = await Order.find({ user: userId })
-      .populate("items.product")
-      .populate("seller", "storeName firstname lastname")
+      .populate({
+        path: "items.product",
+        populate: {
+          path: "seller",
+          select: "storeName owner",
+        },
+      })
       .sort({ createdAt: -1 });
 
     res.status(200).json({
@@ -85,6 +152,7 @@ exports.getUserOrders = async (req, res, next) => {
   }
 };
 
+
 // --------------------------------------------------
 // GET SINGLE ORDER
 // --------------------------------------------------
@@ -94,13 +162,19 @@ exports.getOrderById = async (req, res, next) => {
 
     const order = await Order.findById(orderId)
       .populate("user", "username email")
-      .populate("items.product")
-      .populate("seller", "storeName firstname lastname");
+      .populate({
+        path: "items.product",
+        populate: {
+          path: "seller",
+          select: "storeName owner",
+        },
+      });
 
     if (!order) {
-      const error = new Error("Order not found");
-      error.statusCode = 404;
-      throw error;
+      return res.status(404).json({
+        success: false,
+        message: "Order not found",
+      });
     }
 
     res.status(200).json({
@@ -111,6 +185,7 @@ exports.getOrderById = async (req, res, next) => {
     next(error);
   }
 };
+
 
 // --------------------------------------------------
 // UPDATE ORDER STATUS (SELLER OR ADMIN)

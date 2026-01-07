@@ -1,13 +1,10 @@
 const Notification = require("../models/NotificationModel");
 const User = require("../models/UserModel");
 
-
-// -------------------------------
-// CREATE A NOTIFICATION
-// -------------------------------
 exports.createNotification = async (req, res, next) => {
   try {
-    const { userId, role, message, link } = req.body;
+    const { role, subject, message, link } = req.body;
+    const { userId } = req.user;
 
     if (!message || !role) {
       const error = new Error("Message and role are required");
@@ -16,23 +13,22 @@ exports.createNotification = async (req, res, next) => {
     }
 
     const notif = await Notification.create({
-      userId: userId || null,
+      userId,
       role,
+      subject,
       message,
-      link: link || null,
+      link,
     });
 
-    // If a userId is provided → also push to mailbox
-    if (userId) {
-      await User.findByIdAndUpdate(userId, {
-        $push: {
-          mailbox: {
-            notification: notif._id,
-            mailedAt: new Date(),
-          },
+    await User.findByIdAndUpdate(userId, {
+      $push: {
+        mailbox: {
+          notification: notif._id,
+          mailedAt: new Date(),
+          read: false,
         },
-      });
-    }
+      },
+    });
 
     res.status(201).json({
       success: true,
@@ -44,17 +40,39 @@ exports.createNotification = async (req, res, next) => {
   }
 };
 
-
-
-// -------------------------------
-// GET CURRENT USER NOTIFICATIONS
-// -------------------------------
 exports.getUserNotifications = async (req, res, next) => {
   try {
-    const userId = req.user?.id;
-    
-    const notifications = await Notification.find({ userId })
-      .sort({ createdAt: -1 });
+    const { userId } = req.user;
+
+    const user = await User.findById(userId)
+      .populate("mailbox.notification")
+      .lean();
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: "User not found",
+      });
+    }
+
+    // 🔹 Sort notifications (newest first)
+    const notifications = user.mailbox
+      .filter((m) => m.notification) // safety
+      .sort(
+        (a, b) =>
+          new Date(b.notification.createdAt) -
+          new Date(a.notification.createdAt)
+      )
+      .map((m) => ({
+        _id: m.notification._id,
+        subject: m.notification.subject,
+        message: m.notification.message,
+        link: m.notification.link,
+        role: m.notification.role,
+        read: m.read,
+        createdAt: m.notification.createdAt,
+      }));
+
 
     res.status(200).json({
       success: true,
@@ -66,59 +84,36 @@ exports.getUserNotifications = async (req, res, next) => {
 };
 
 
-
-// -------------------------------
-// MARK AS READ
-// -------------------------------
 exports.markRead = async (req, res, next) => {
   try {
     const { notifId } = req.params;
+    const { userId } = req.user;
 
-    const notif = await Notification.findByIdAndUpdate(
-      notifId,
-      { read: true },
-      { new: true }
+    const result = await User.updateOne(
+      { _id: userId, "mailbox.notification": notifId },
+      { $set: { "mailbox.$.read": true } }
     );
 
-    if (!notif) {
-      const error = new Error("Notification not found");
-      error.statusCode = 404;
-      throw error;
+    if (!result.matchedCount) {
+      return res.status(404).json({ message: "Notification not found" });
     }
 
-    res.status(200).json({
-      success: true,
-      notification: notif,
-    });
+    res.status(200).json({ success: true });
   } catch (error) {
     next(error);
   }
 };
 
-// -------------------------------
-// MARK ALL NOTIFICATIONS AS READ
-// -------------------------------
 exports.markAllRead = async (req, res, next) => {
   try {
-    const userId = req.user?.id;
-
+    const { userId } = req.user;
     if (!userId) {
-      const error = new Error("Unauthorized");
-      error.statusCode = 401;
-      throw error;
+      return res.status(401).json({ message: "Unauthorized" });
     }
 
-    // Update all notifications
-    await Notification.updateMany(
-      { userId, read: false },
-      { $set: { read: true } }
-    );
-
-    // (Optional) Also update mailbox flags if needed
     await User.updateOne(
       { _id: userId },
-      { $set: { "mailbox.$[].read": true } }, // update all mailbox items
-      { multi: true }
+      { $set: { "mailbox.$[].read": true } }
     );
 
     res.status(200).json({
@@ -130,26 +125,17 @@ exports.markAllRead = async (req, res, next) => {
   }
 };
 
-// -------------------------------
-// DELETE NOTIFICATION
-// -------------------------------
 exports.deleteNotification = async (req, res, next) => {
   try {
     const { notifId } = req.params;
+    const { userId } = req.user;
 
-    const notif = await Notification.findByIdAndDelete(notifId);
-
-    if (!notif) {
-      const error = new Error("Notification not found");
-      error.statusCode = 404;
-      throw error;
-    }
-
-    // Also remove from user's mailbox
-    await User.updateMany(
-      {},
+    await User.updateOne(
+      { _id: userId },
       { $pull: { mailbox: { notification: notifId } } }
     );
+
+    await Notification.findByIdAndDelete(notifId);
 
     res.status(200).json({
       success: true,
@@ -160,19 +146,11 @@ exports.deleteNotification = async (req, res, next) => {
   }
 };
 
-
-
-// -------------------------------
-// ADMIN: BROADCAST TO ALL USERS
-// -------------------------------
 exports.broadcastUsers = async (req, res, next) => {
   try {
-    const { message, link } = req.body;
-
-    if (!message) {
-      const error = new Error("Message is required");
-      error.statusCode = 400;
-      throw error;
+    const { message, link, subject } = req.body;
+    if (!message || !subject) {
+      return res.status(400).json({ message: "Message & subject required" });
     }
 
     const users = await User.find({}, "_id");
@@ -180,35 +158,39 @@ exports.broadcastUsers = async (req, res, next) => {
     const notifDocs = users.map((u) => ({
       userId: u._id,
       role: "user",
+      subject,
       message,
       link: link || null,
     }));
 
     const notifications = await Notification.insertMany(notifDocs);
 
-    // Push to mailbox
-    for (const notif of notifications) {
-      await User.findByIdAndUpdate(notif.userId, {
-        $push: { mailbox: { notification: notif._id, mailedAt: new Date() } },
-      });
-    }
+    const bulkOps = notifications.map((n) => ({
+      updateOne: {
+        filter: { _id: n.userId },
+        update: {
+          $push: {
+            mailbox: {
+              notification: n._id,
+              mailedAt: new Date(),
+              read: false,
+            },
+          },
+        },
+      },
+    }));
+
+    await User.bulkWrite(bulkOps);
 
     res.status(200).json({
       success: true,
-      message: "Broadcast sent to all users",
       count: notifications.length,
     });
-
   } catch (error) {
     next(error);
   }
 };
 
-
-
-// -------------------------------
-// ADMIN: BROADCAST TO ALL SELLERS
-// -------------------------------
 exports.broadcastSellers = async (req, res, next) => {
   try {
     const { message, link } = req.body;
@@ -242,7 +224,6 @@ exports.broadcastSellers = async (req, res, next) => {
       message: "Broadcast sent to all sellers",
       count: notifications.length,
     });
-
   } catch (error) {
     next(error);
   }

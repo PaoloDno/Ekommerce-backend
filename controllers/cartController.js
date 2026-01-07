@@ -13,9 +13,9 @@ exports.getCart = async (req, res, next) => {
     );
 
     if (!cart) {
-      const error = new Error("Cart not found for this user");
-      error.statusCode = 404;
-      throw error;
+      console.log("this user dont jhave cart");
+      
+      cart = await Cart.create({ user: userId, items: [] });
     }
 
     const totalPrice = cart.items.reduce(

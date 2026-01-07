@@ -37,3 +37,14 @@ const paginationMiddleware = (req, res, next) => {
 };
 
 module.exports = paginationMiddleware;
+
+
+/**
+ * 
+ * resultsPerPage
+ * currentPage
+ * skipDocuments
+ * sortBy
+ * sortOrder
+ *  
+ */

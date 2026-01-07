@@ -4,7 +4,7 @@ const NotificationSchema = new mongoose.Schema({
   userId: {
     type: mongoose.Schema.Types.ObjectId,
     ref: "User",
-    required: false,
+    required: true,
   },
   role: {
     type: String,
@@ -14,7 +14,6 @@ const NotificationSchema = new mongoose.Schema({
   subject: { type: String, required: true},
   message: { type: String, required: true},
   link: { type: String },
-  read: { type: Boolean, default: false},
 
 }, {timestamps: true});
 
