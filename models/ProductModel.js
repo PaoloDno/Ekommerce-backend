@@ -21,7 +21,6 @@ const productSchema = new mongoose.Schema(
     attributes: { type: Map, of: String },
 
     seller: { type: mongoose.Schema.Types.ObjectId, ref: "Seller" },
-
     
     reviews: [
       {
@@ -29,17 +28,20 @@ const productSchema = new mongoose.Schema(
         ref: "Review",
       },
     ],
+
     averageRating: {
       type: Number,
       default: 0,
       min: 0,
       max: 5,
     },
+
     numOfReviews: {
       type: Number,
       default: 0,
       min: 0,
     },
+    
   },
   { timestamps: true }
 );

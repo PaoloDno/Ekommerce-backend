@@ -1,6 +1,7 @@
 const Seller = require("../models/SellerModel");
 const User = require("../models/UserModel");
 const Review = require("../models/ReviewModel.js");
+const Order = require("../models/OrderModel.js");
 
 exports.createSeller = async (req, res, next) => {
   try {
@@ -58,48 +59,6 @@ exports.createSeller = async (req, res, next) => {
   }
 };
 
-exports.getOwnerStore = async (req, res, next) => {
-  try {
-    const { userId } = req.user;
-
-    const foundOwnerStore = await Seller.findOne({ owner: userId }).populate({
-      path: "products",
-      model: "Product",
-      select: "name price stock productImage images averageRating",
-    });
-
-    if (!foundOwnerStore) {
-      const error = new Error("No Store");
-      error.statusCode = 400;
-      throw error;
-    }
-    console.log(foundOwnerStore);
-
-    const sellerProducts = foundOwnerStore.products.map((p) => p._id);
-
-    const top3 = await Review.find({ product: { $in: sellerProducts } })
-      .sort({ rating: -1 })
-      .limit(3)
-      .populate("user", "username");
-
-    const low3 = await Review.find({ product: { $in: sellerProducts } })
-      .sort({ rating: 1 })
-      .limit(3)
-      .populate("user", "username");
-
-    const storeData = {
-      ...foundOwnerStore.toObject(),
-      reviews: { top3, low3 },
-    };
-    res.status(200).json({
-      success: true,
-      data: storeData,
-      message: "Owner Store successfully fetch",
-    });
-  } catch (error) {
-    next(error);
-  }
-};
 
 exports.getStoreId = async (req, res, next) => {
   try {
@@ -147,6 +106,127 @@ exports.getStoreId = async (req, res, next) => {
     next(error);
   }
 };
+
+exports.getOwnerStore = async (req, res, next) => {
+  try {
+    const { userId } = req.user;
+
+    const seller = await Seller.findOne({ owner: userId })
+      .populate({
+        path: "products",
+        select: "name price stock productImage averageRating",
+      })
+
+    if (!seller) {
+      const error = new Error("No Store");
+      error.statusCode = 400;
+      throw error;
+    }
+
+    const productIds = seller.products.map(p => p._id);
+
+    // ============================
+    // ORDERS RELATED TO SELLER
+    // ============================
+    const orders = await Order.find({
+      "items.product": { $in: productIds },
+      status: { $in: ["paid", "shipped", "delivered"] },
+    }).lean();
+
+    let totalRevenue = 0;
+    let totalOrders = orders.length;
+
+    orders.forEach(order => {
+      order.items.forEach(item => {
+        if (productIds.some(id => id.equals(item.product))) {
+          totalRevenue += item.price * item.quantity;
+        }
+      });
+    });
+
+    const averageOrderValue =
+      totalOrders > 0 ? +(totalRevenue / totalOrders).toFixed(2) : 0;
+
+    // ============================
+    // TIME-BASED METRICS
+    // ============================
+    const now = new Date();
+    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+    const startOfDay = new Date(now.setHours(0, 0, 0, 0));
+
+    const monthlyRevenue = orders
+      .filter(o => o.createdAt >= startOfMonth)
+      .reduce((sum, o) => {
+        o.items.forEach(i => {
+          if (productIds.some(id => id.equals(i.product))) {
+            sum += i.price * i.quantity;
+          }
+        });
+        return sum;
+      }, 0);
+
+    const dailyRevenue = orders
+      .filter(o => o.createdAt >= startOfDay)
+      .reduce((sum, o) => {
+        o.items.forEach(i => {
+          if (productIds.some(id => id.equals(i.product))) {
+            sum += i.price * i.quantity;
+          }
+        });
+        return sum;
+      }, 0);
+
+    // ============================
+    // PRODUCT METRICS
+    // ============================
+    const totalProducts = seller.products.length;
+    const outOfStockProducts = seller.products.filter(p => p.stock === 0).length;
+    const lowStockProducts = seller.products.filter(p => p.stock <= 5).length;
+
+    // ============================
+    // REVIEWS
+    // ============================
+    const top3 = await Review.find({ product: { $in: productIds } })
+      .sort({ rating: -1 })
+      .limit(3)
+      .populate("user", "username");
+
+    const low3 = await Review.find({ product: { $in: productIds } })
+      .sort({ rating: 1 })
+      .limit(3)
+      .populate("user", "username");
+
+    const storeData = {
+        ...seller.toObject(),
+        reviews: { top3, low3 },
+        metrics: {
+          revenue: {
+            totalRevenue,
+            monthlyRevenue,
+            dailyRevenue,
+            averageOrderValue,
+          },
+          orders: {
+            totalOrders,
+          },
+          products: {
+            totalProducts,
+            outOfStockProducts,
+            lowStockProducts,
+          },
+        },
+      }
+
+    res.status(200).json({
+      success: true,
+      data: storeData,
+      message: "Owner store fetched successfully",
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
 
 exports.getStores = async (req, res, next) => {
   try {
