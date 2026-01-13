@@ -20,6 +20,7 @@ const userSchema = new mongoose.Schema(
         city: String,
         country: String,
         postalCode: String,
+        phoneNumber: String,
       },
     ],
     isAdmin: { type: Boolean, default: false },

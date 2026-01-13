@@ -6,31 +6,58 @@ const orderSchema = new mongoose.Schema(
 
     items: [
       {
-        product: {
-          type: mongoose.Schema.Types.ObjectId,
-          ref: "Product",
-          required: true,
+        product: { type: mongoose.Schema.Types.ObjectId, ref: "Product", required: true },
+        name: String,
+        image: String,
+        price: Number,
+        quantity: Number,
+        variant: String,
+
+        productShippingStatus: {
+          type: String,
+          enum: ["pending", "processing", "shipped", "delivered", "cancelled", "refunded"],
+          default: "pending",
         },
-        name: { type: String, required: true },
-        price: { type: Number, required: true },
-        quantity: { type: Number, required: true },
+
+        courier: String,
+        trackingNumber: String,
+        shippedAt: Date,
+        deliveredAt: Date,
       },
     ],
 
+
     shippingAddress: {
-      street: { type: String },
-      city: { type: String },
-      country: { type: String },
-      postalCode: { type: String },
+      street: String,
+      city: String,
+      country: String,
+      postalCode: String,
+      phoneNumber: String,
     },
 
-    shippingFee: { type: Number, default: 0 },
-    itemTotalPrice: { type: Number, required: true },
-    totalSum: { type: Number, required: true },
+    pricing: {
+      itemsTotal: { type: Number, required: true },
+      shippingFee: { type: Number, default: 0 },
+      total: { type: Number, required: true },
+    },
+
+    payment: {
+      method: { type: String, enum: ["cod", "gcash", "paypal"], default: "cod" },
+      isPaid: { type: Boolean, default: false },
+      paidAt: Date,
+      transactionId: String,
+    },
+
+    shipping: {
+      courier: String,
+      trackingNumber: String,
+      shippedAt: Date,
+      deliveredAt: Date,
+    },
 
     status: {
       type: String,
-      enum: ["pending", "paid", "shipped", "delivered", "cancelled"],
+      enum: ["pending", "processing", "shipped", "delivered", "cancelled", "refunded"],
       default: "pending",
     },
   },

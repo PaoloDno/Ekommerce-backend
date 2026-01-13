@@ -1,248 +1,247 @@
 const Order = require("../models/OrderModel");
 const User = require("../models/UserModel");
-const Notification = require("../models/NotificationModel");
 const Cart = require("../models/CartModel");
 const Product = require("../models/ProductModel");
-// utils
 const sendNotification = require("../utils/sendNotification");
-// --------------------------------------------------
-// CREATE ORDER
-// --------------------------------------------------
+const canUpdateStatus = require("../utils/orderPermission");
+
+// --------------------------------
+// Helpers
+// --------------------------------
+
+function recomputeOrderStatus(order) {
+  const s = order.items.map(i => i.sellerStatus);
+
+  if (s.every(v => v === "delivered")) return "delivered";
+  if (s.every(v => v === "cancelled")) return "cancelled";
+  if (s.every(v => v === "shipped")) return "shipped";
+  if (s.some(v => v === "shipped")) return "partially_shipped";
+  if (s.some(v => v === "processing")) return "processing";
+
+  return "pending";
+}
+
+// --------------------------------
+// Create Order
+// --------------------------------
+
 exports.createOrder = async (req, res, next) => {
   try {
     const { userId } = req.user;
+    const { items, itemTotalPrice, shippingFee, totalSum, shippingAddress } = req.body;
 
-    const { items, itemTotalPrice, shippingFee, totalSum, shippingAddress } =
-      req.body;
-
-    // -------------------------------
-    // VALIDATION
-    // -------------------------------
-    if (
-      !userId ||
-      !Array.isArray(items) ||
-      items.length === 0 ||
-      !totalSum ||
-      !shippingAddress
-    ) {
-      return res.status(400).json({
-        success: false,
-        message: "Missing required order fields",
-      });
-    }
-
-    // -------------------------------
-    // CREATE ORDER
-    // -------------------------------
     const newOrder = await Order.create({
       user: userId,
-      items,
-      itemTotalPrice,
-      shippingFee,
-      totalSum,
+      items: items.map(i => ({ ...i, productShippingStatus: "pending" })),
       shippingAddress,
+      pricing: {
+        itemsTotal: itemTotalPrice,
+        shippingFee: shippingFee || 0,
+        total: totalSum,
+      },
+      payment: { method: "cod", isPaid: false },
       status: "pending",
     });
 
-    // -------------------------------
-    // ADD TO USER ORDER HISTORY
-    // -------------------------------
     await User.findByIdAndUpdate(userId, {
-      $push: {
-        orderhistory: {
-          order: newOrder._id,
-          purchasedAt: new Date(),
-        },
-      },
+      $push: { orderhistory: { order: newOrder._id, purchasedAt: new Date() } },
     });
 
-    // -------------------------------
-    // USER NOTIFICATION
-    // -------------------------------
-    await sendNotification({
-      userId,
-      role: "user",
-      subject: `Pending Order #${newOrder._id}`,
-      message: "Order placed successfully.",
-      link: `/orders/${newOrder._id}`,
-    });
+    const products = await Product.find({ _id: { $in: items.map(i => i.product) } })
+      .populate({ path: "seller", populate: { path: "owner" } });
 
-    // -------------------------------
-    // RESOLVE UNIQUE SELLERS (OPTIMIZED)
-    // -------------------------------
-    const productIds = items.map((i) => i.product);
-
-    const products = await Product.find({ _id: { $in: productIds } }).populate({
-      path: "seller",
-      populate: { path: "owner" },
-    });
-
-    const storeOwners = new Map();
-
-    for (const product of products) {
-      if (product?.seller?.owner) {
-        storeOwners.set(
-          product.seller.owner._id.toString(),
-          product.seller.owner
-        );
+    const notified = new Set();
+    for (const p of products) {
+      if (p.seller?.owner && !notified.has(p.seller.owner._id.toString())) {
+        notified.add(p.seller.owner._id.toString());
+        await sendNotification({
+          userId: p.seller.owner._id,
+          role: "seller",
+          subject: "New Order",
+          message: `Order #${newOrder._id} contains your products.`,
+          link: `/seller/orders/${newOrder._id}`,
+        });
       }
     }
 
-    // -------------------------------
-    // SELLER NOTIFICATIONS
-    // -------------------------------
-    for (const owner of storeOwners.values()) {
-      await sendNotification({
-        userId: owner._id,
-        role: "seller",
-        subject: "New Order Received",
-        message: `Order #${newOrder._id} includes your product(s).`,
-        link: `/seller/orders/${newOrder._id}`,
-      });
-    }
-
-    // -------------------------------
-    // CLEAR CART
-    // -------------------------------
     await Cart.findOneAndDelete({ user: userId });
 
-    // -------------------------------
-    // RESPONSE
-    // -------------------------------
-    res.status(201).json({
-      success: true,
-      message: "Order placed successfully",
-      order: newOrder,
-    });
-  } catch (error) {
-    next(error);
+    res.status(201).json({ success: true, order: newOrder });
+  } catch (err) {
+    next(err);
   }
 };
 
-// --------------------------------------------------
-// GET ALL ORDERS OF A USER
-// --------------------------------------------------
+// --------------------------------
+// User Orders
+// --------------------------------
+
 exports.getUserOrders = async (req, res, next) => {
   try {
-    const { userId } = req.user;
-
-    if (!userId) {
-      return res.status(401).json({
-        success: false,
-        message: "Unauthorized",
-      });
-    }
-
-    const orders = await Order.find({ user: userId })
+    const orders = await Order.find({ user: req.user.userId })
       .populate({
         path: "items.product",
-        populate: {
-          path: "seller",
-          select: "storeName owner",
-        },
+        populate: { path: "seller", select: "storeName owner" },
       })
       .sort({ createdAt: -1 });
 
-    res.status(200).json({
-      success: true,
-      orders,
-    });
-  } catch (error) {
-    next(error);
+    res.json({ success: true, orders });
+  } catch (err) {
+    next(err);
   }
 };
 
+// --------------------------------
+// Single Order
+// --------------------------------
 
-// --------------------------------------------------
-// GET SINGLE ORDER
-// --------------------------------------------------
 exports.getOrderById = async (req, res, next) => {
   try {
-    const { orderId } = req.params;
-
-    const order = await Order.findById(orderId)
+    const order = await Order.findById(req.params.orderId)
       .populate("user", "username email")
       .populate({
         path: "items.product",
-        populate: {
-          path: "seller",
-          select: "storeName owner",
-        },
+        populate: { path: "seller", select: "storeName owner" },
       });
 
-    if (!order) {
-      return res.status(404).json({
-        success: false,
-        message: "Order not found",
-      });
-    }
-
-    res.status(200).json({
-      success: true,
-      order,
-    });
-  } catch (error) {
-    next(error);
+    if (!order) return res.status(404).json({ message: "Order not found" });
+    res.json({ success: true, order });
+  } catch (err) {
+    next(err);
   }
 };
 
+// --------------------------------
+// Admin Global Status Update
+// --------------------------------
 
-// --------------------------------------------------
-// UPDATE ORDER STATUS (SELLER OR ADMIN)
-// --------------------------------------------------
 exports.updateOrderStatus = async (req, res, next) => {
   try {
-    const { orderId } = req.params;
-    const { status } = req.body;
+    const { status, role } = req.body;
+    const order = await Order.findById(req.params.orderId).populate("user");
 
-    const validStatus = [
-      "pending",
-      "paid",
-      "shipped",
-      "delivered",
-      "cancelled",
-    ];
+    if (!canUpdateStatus(role, order.status, status))
+      return res.status(403).json({ message: "Not allowed" });
 
-    if (!validStatus.includes(status)) {
-      const error = new Error("Invalid order status");
-      error.statusCode = 400;
-      throw error;
-    }
+    order.items.forEach(i => {
+      i.sellerStatus = status;
+      if (status === "shipped") i.shippedAt = new Date();
+      if (status === "delivered") i.deliveredAt = new Date();
+    });
 
-    const updatedOrder = await Order.findByIdAndUpdate(
-      orderId,
-      { status },
-      { new: true }
-    ).populate("user seller");
+    order.status = recomputeOrderStatus(order);
+    await order.save();
 
-    if (!updatedOrder) {
-      const error = new Error("Order not found");
-      error.statusCode = 404;
-      throw error;
-    }
-
-    // Notify user
-    await Notification.create({
-      userId: updatedOrder.user._id,
+    await sendNotification({
+      userId: order.user._id,
       role: "user",
-      message: `Your order #${updatedOrder._id} status is now: "${status}".`,
+      subject: `Order ${order.status}`,
+      message: `Order #${order._id} is now ${order.status}`,
+      link: `/orders/${order._id}`,
     });
 
-    // Notify seller (only if exists)
-    if (updatedOrder.seller) {
-      await Notification.create({
-        userId: updatedOrder.seller._id,
-        role: "seller",
-        message: `Order #${updatedOrder._id} has been updated to "${status}".`,
-      });
+    res.json({ success: true, order });
+  } catch (err) {
+    next(err);
+  }
+};
+
+// --------------------------------
+// Seller Orders (only own items)
+// --------------------------------
+
+exports.getSellerOrders = async (req, res, next) => {
+  try {
+    const sellerId = req.user.userId;
+
+    const orders = await Order.find()
+      .populate("user", "username email")
+      .populate({
+        path: "items.product",
+        match: { seller: sellerId },
+        select: "name images seller",
+      })
+      .sort({ createdAt: -1 });
+
+    const sellerOrders = orders
+      .map(o => {
+        const myItems = o.items.filter(i => i.product);
+        if (!myItems.length) return null;
+
+        return {
+          _id: o._id,
+          buyer: o.user,
+          status: o.status,
+          items: myItems,
+          createdAt: o.createdAt,
+        };
+      })
+      .filter(Boolean);
+
+    res.json({ success: true, orders: sellerOrders });
+  } catch (err) {
+    next(err);
+  }
+};
+
+// --------------------------------
+// Seller Ships Their Items
+// --------------------------------
+
+exports.shipSellerItems = async (req, res, next) => {
+  try {
+    const { courier, trackingNumber } = req.body;
+    const sellerId = req.user.userId;
+
+    const order = await Order.findById(req.params.orderId).populate("items.product");
+
+    let updated = false;
+
+    for (const item of order.items) {
+      if (
+        item.product.seller.toString() === sellerId &&
+        item.sellerStatus === "processing"
+      ) {
+        item.sellerStatus = "shipped";
+        item.courier = courier;
+        item.trackingNumber = trackingNumber;
+        item.shippedAt = new Date();
+        updated = true;
+      }
     }
 
-    res.status(200).json({
-      success: true,
-      message: "Order status updated",
-      order: updatedOrder,
-    });
-  } catch (error) {
-    next(error);
+    if (!updated) return res.status(403).json({ message: "Nothing to ship" });
+
+    order.status = recomputeOrderStatus(order);
+    await order.save();
+
+    res.json({ success: true, status: order.status });
+  } catch (err) {
+    next(err);
+  }
+};
+
+// --------------------------------
+// Buyer Confirms Delivery (per item)
+// --------------------------------
+
+exports.confirmItemDelivery = async (req, res, next) => {
+  try {
+    const { orderId, itemId } = req.params;
+    const order = await Order.findOne({ _id: orderId, user: req.user.userId });
+
+    const item = order.items.id(itemId);
+    if (item.sellerStatus !== "shipped")
+      return res.status(400).json({ message: "Item not shipped yet" });
+
+    item.sellerStatus = "delivered";
+    item.deliveredAt = new Date();
+
+    order.status = recomputeOrderStatus(order);
+    await order.save();
+
+    res.json({ success: true, status: order.status });
+  } catch (err) {
+    next(err);
   }
 };

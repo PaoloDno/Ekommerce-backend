@@ -3,41 +3,65 @@ const Product = require("../models/ProductModel.js");
 const Order = require("../models/OrderModel.js");
 
 exports.getCart = async (req, res, next) => {
-
   const { userId } = req.user;
 
   try {
-    const cart = await Cart.findOne({ user: userId }).populate(
-      "items.product",
-      "name price productImage stock averageRating"
-    );
+    let cart = await Cart.findOne({ user: userId }).populate({
+      path: "items.product",
+      select: "name price productImage stock averageRating attributes seller",
+      populate: {
+        path: "seller",
+        select: "storeName logo",
+      },
+    });
 
+    // Create empty cart if none exists
     if (!cart) {
-      console.log("this user dont jhave cart");
-      
       cart = await Cart.create({ user: userId, items: [] });
     }
 
-    const totalPrice = cart.items.reduce(
+    // Enrich each item with full product info + attributes
+    const enrichedItems = cart.items.map((item) => {
+      const product = item.product;
+
+      // Convert Map to plain object for frontend
+      const attributes = product?.attributes ? Object.fromEntries(product.attributes) : {};
+
+      return {
+        ...item.toObject(),
+        product: {
+          _id: product._id,
+          name: product.name,
+          price: product.price,
+          stock: product.stock,
+          averageRating: product.averageRating,
+          image: product.productImage,
+          seller: product.seller,
+          attributes,
+        },
+        selectedAttributes: item.attributes || {}, // attributes selected by user
+      };
+    });
+
+    // Calculate totals
+    const totalPrice = enrichedItems.reduce(
       (total, item) => total + item.price * item.quantity,
       0
     );
-    const totalItems = cart.items.reduce(
+
+    const totalItems = enrichedItems.reduce(
       (count, item) => count + item.quantity,
       0
     );
-    console.log("asdasdasdsa cart succesffuly");
-    console.log( "Cart fetched successfully:",
-      cart,
-      "totalprice",
-      totalPrice,
-      "totalItems",
-      totalItems,
-    )
+
+    // Return cart data
     res.status(200).json({
       success: true,
       message: "Cart fetched successfully",
-      cart,
+      cart: {
+        ...cart.toObject(),
+        items: enrichedItems,
+      },
       totalPrice,
       totalItems,
     });

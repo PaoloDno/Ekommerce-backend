@@ -189,12 +189,14 @@ exports.getOwnerStore = async (req, res, next) => {
     const top3 = await Review.find({ product: { $in: productIds } })
       .sort({ rating: -1 })
       .limit(3)
-      .populate("user", "username");
+      .populate("user", "username")
+      .populate("product", "name productImage _id");
 
     const low3 = await Review.find({ product: { $in: productIds } })
       .sort({ rating: 1 })
       .limit(3)
-      .populate("user", "username");
+      .populate("user", "username")
+      .populate("product", "name productImage _id");
 
     const storeData = {
         ...seller.toObject(),
