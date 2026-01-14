@@ -10,13 +10,13 @@ const canUpdateStatus = require("../utils/orderPermission");
 // --------------------------------
 
 function recomputeOrderStatus(order) {
-  const s = order.items.map(i => i.sellerStatus);
+  const s = order.items.map((i) => i.sellerStatus);
 
-  if (s.every(v => v === "delivered")) return "delivered";
-  if (s.every(v => v === "cancelled")) return "cancelled";
-  if (s.every(v => v === "shipped")) return "shipped";
-  if (s.some(v => v === "shipped")) return "partially_shipped";
-  if (s.some(v => v === "processing")) return "processing";
+  if (s.every((v) => v === "delivered")) return "delivered";
+  if (s.every((v) => v === "cancelled")) return "cancelled";
+  if (s.every((v) => v === "shipped")) return "shipped";
+  if (s.some((v) => v === "shipped")) return "partially_shipped";
+  if (s.some((v) => v === "processing")) return "processing";
 
   return "pending";
 }
@@ -28,11 +28,12 @@ function recomputeOrderStatus(order) {
 exports.createOrder = async (req, res, next) => {
   try {
     const { userId } = req.user;
-    const { items, itemTotalPrice, shippingFee, totalSum, shippingAddress } = req.body;
+    const { items, itemTotalPrice, shippingFee, totalSum, shippingAddress } =
+      req.body;
 
     const newOrder = await Order.create({
       user: userId,
-      items: items.map(i => ({ ...i, productShippingStatus: "pending" })),
+      items: items.map((i) => ({ ...i, productShippingStatus: "pending" })),
       shippingAddress,
       pricing: {
         itemsTotal: itemTotalPrice,
@@ -47,8 +48,9 @@ exports.createOrder = async (req, res, next) => {
       $push: { orderhistory: { order: newOrder._id, purchasedAt: new Date() } },
     });
 
-    const products = await Product.find({ _id: { $in: items.map(i => i.product) } })
-      .populate({ path: "seller", populate: { path: "owner" } });
+    const products = await Product.find({
+      _id: { $in: items.map((i) => i.product) },
+    }).populate({ path: "seller", populate: { path: "owner" } });
 
     const notified = new Set();
     for (const p of products) {
@@ -81,11 +83,28 @@ exports.getUserOrders = async (req, res, next) => {
     const orders = await Order.find({ user: req.user.userId })
       .populate({
         path: "items.product",
-        populate: { path: "seller", select: "storeName owner" },
+        select: "name price productImage attributes seller",
+        populate: {
+          path: "seller",
+          select: "storeName sellerLogo owner ratings.average",
+        },
       })
       .sort({ createdAt: -1 });
 
-    res.json({ success: true, orders });
+    let statusCount = {
+      pending: 0,
+      processing: 0,
+      shipped: 0,
+      delivered: 0,
+      cancelled: 0,
+      refunded: 0,
+    };
+
+    orders.forEach((o) => statusCount[o.status]++);
+
+    console.log(statusCount);
+
+    res.json({ success: true, data: { orders, statusCount } });
   } catch (err) {
     next(err);
   }
@@ -101,7 +120,11 @@ exports.getOrderById = async (req, res, next) => {
       .populate("user", "username email")
       .populate({
         path: "items.product",
-        populate: { path: "seller", select: "storeName owner" },
+        select: "name price productImage attributes seller ",
+        populate: {
+          path: "seller",
+          select: "storeName sellerLogo owner ratings.avergae",
+        },
       });
 
     if (!order) return res.status(404).json({ message: "Order not found" });
@@ -123,7 +146,7 @@ exports.updateOrderStatus = async (req, res, next) => {
     if (!canUpdateStatus(role, order.status, status))
       return res.status(403).json({ message: "Not allowed" });
 
-    order.items.forEach(i => {
+    order.items.forEach((i) => {
       i.sellerStatus = status;
       if (status === "shipped") i.shippedAt = new Date();
       if (status === "delivered") i.deliveredAt = new Date();
@@ -152,20 +175,28 @@ exports.updateOrderStatus = async (req, res, next) => {
 
 exports.getSellerOrders = async (req, res, next) => {
   try {
-    const sellerId = req.user.userId;
+    const sellerId = req.params.sellerId;
 
     const orders = await Order.find()
       .populate("user", "username email")
       .populate({
         path: "items.product",
+        select: "name price productImage attributes seller",
         match: { seller: sellerId },
-        select: "name images seller",
+        populate: {
+          path: "seller",
+          select: "name images seller",
+        },
       })
+
       .sort({ createdAt: -1 });
 
+      console.log("orders", orders);
+      console.log("sellerId", sellerId);
+
     const sellerOrders = orders
-      .map(o => {
-        const myItems = o.items.filter(i => i.product);
+      .map((o) => {
+        const myItems = o.items.filter((i) => i.product);
         if (!myItems.length) return null;
 
         return {
@@ -178,7 +209,9 @@ exports.getSellerOrders = async (req, res, next) => {
       })
       .filter(Boolean);
 
-    res.json({ success: true, orders: sellerOrders });
+    console.log("seller Ordes", sellerOrders);
+
+    res.json({ success: true, storeOrders: sellerOrders });
   } catch (err) {
     next(err);
   }
@@ -193,7 +226,9 @@ exports.shipSellerItems = async (req, res, next) => {
     const { courier, trackingNumber } = req.body;
     const sellerId = req.user.userId;
 
-    const order = await Order.findById(req.params.orderId).populate("items.product");
+    const order = await Order.findById(req.params.orderId).populate(
+      "items.product"
+    );
 
     let updated = false;
 

@@ -59,7 +59,6 @@ exports.createSeller = async (req, res, next) => {
   }
 };
 
-
 exports.getStoreId = async (req, res, next) => {
   try {
     const { storeId } = req.params;
@@ -111,19 +110,20 @@ exports.getOwnerStore = async (req, res, next) => {
   try {
     const { userId } = req.user;
 
-    const seller = await Seller.findOne({ owner: userId })
-      .populate({
-        path: "products",
-        select: "name price stock productImage averageRating",
-      })
+    const seller = await Seller.findOne({ owner: userId }).populate({
+      path: "products",
+      select: "name price stock productImage averageRating",
+    });
 
     if (!seller) {
-      const error = new Error("No Store");
-      error.statusCode = 400;
-      throw error;
+      return res.status(200).json({
+        success: true,
+        hasStore: false,
+        message: "User has no store yet",
+      });
     }
 
-    const productIds = seller.products.map(p => p._id);
+    const productIds = seller.products.map((p) => p._id);
 
     // ============================
     // ORDERS RELATED TO SELLER
@@ -136,9 +136,9 @@ exports.getOwnerStore = async (req, res, next) => {
     let totalRevenue = 0;
     let totalOrders = orders.length;
 
-    orders.forEach(order => {
-      order.items.forEach(item => {
-        if (productIds.some(id => id.equals(item.product))) {
+    orders.forEach((order) => {
+      order.items.forEach((item) => {
+        if (productIds.some((id) => id.equals(item.product))) {
           totalRevenue += item.price * item.quantity;
         }
       });
@@ -155,10 +155,10 @@ exports.getOwnerStore = async (req, res, next) => {
     const startOfDay = new Date(now.setHours(0, 0, 0, 0));
 
     const monthlyRevenue = orders
-      .filter(o => o.createdAt >= startOfMonth)
+      .filter((o) => o.createdAt >= startOfMonth)
       .reduce((sum, o) => {
-        o.items.forEach(i => {
-          if (productIds.some(id => id.equals(i.product))) {
+        o.items.forEach((i) => {
+          if (productIds.some((id) => id.equals(i.product))) {
             sum += i.price * i.quantity;
           }
         });
@@ -166,10 +166,10 @@ exports.getOwnerStore = async (req, res, next) => {
       }, 0);
 
     const dailyRevenue = orders
-      .filter(o => o.createdAt >= startOfDay)
+      .filter((o) => o.createdAt >= startOfDay)
       .reduce((sum, o) => {
-        o.items.forEach(i => {
-          if (productIds.some(id => id.equals(i.product))) {
+        o.items.forEach((i) => {
+          if (productIds.some((id) => id.equals(i.product))) {
             sum += i.price * i.quantity;
           }
         });
@@ -180,8 +180,10 @@ exports.getOwnerStore = async (req, res, next) => {
     // PRODUCT METRICS
     // ============================
     const totalProducts = seller.products.length;
-    const outOfStockProducts = seller.products.filter(p => p.stock === 0).length;
-    const lowStockProducts = seller.products.filter(p => p.stock <= 5).length;
+    const outOfStockProducts = seller.products.filter(
+      (p) => p.stock === 0
+    ).length;
+    const lowStockProducts = seller.products.filter((p) => p.stock <= 5).length;
 
     // ============================
     // REVIEWS
@@ -199,29 +201,30 @@ exports.getOwnerStore = async (req, res, next) => {
       .populate("product", "name productImage _id");
 
     const storeData = {
-        ...seller.toObject(),
-        reviews: { top3, low3 },
-        metrics: {
-          revenue: {
-            totalRevenue,
-            monthlyRevenue,
-            dailyRevenue,
-            averageOrderValue,
-          },
-          orders: {
-            totalOrders,
-          },
-          products: {
-            totalProducts,
-            outOfStockProducts,
-            lowStockProducts,
-          },
+      ...seller.toObject(),
+      reviews: { top3, low3 },
+      metrics: {
+        revenue: {
+          totalRevenue,
+          monthlyRevenue,
+          dailyRevenue,
+          averageOrderValue,
         },
-      }
-
+        orders: {
+          totalOrders,
+        },
+        products: {
+          totalProducts,
+          outOfStockProducts,
+          lowStockProducts,
+        },
+      },
+    };
+    console.log(storeData);
     res.status(200).json({
       success: true,
       data: storeData,
+      hasStore: true,
       message: "Owner store fetched successfully",
     });
   } catch (error) {
@@ -229,17 +232,11 @@ exports.getOwnerStore = async (req, res, next) => {
   }
 };
 
-
 exports.getStores = async (req, res, next) => {
   try {
     const { storeName, isVerified, minrating, city, country } = req.query;
-    const {
-      resultsPerPage,
-      currentPage,
-      skipDocuments,
-      sortBy,
-      sortOrder,
-    } = req.pagination;
+    const { resultsPerPage, currentPage, skipDocuments, sortBy, sortOrder } =
+      req.pagination;
 
     const allowedSorts = [
       "createdAt",

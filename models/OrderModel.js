@@ -10,8 +10,12 @@ const orderSchema = new mongoose.Schema(
         name: String,
         image: String,
         price: Number,
+        stock: Number,
         quantity: Number,
-        variant: String,
+        attributes: {
+          type: Map,
+          of: String, // e.g., { color: "Red", size: "XL", material: "Cotton" }
+        },
 
         productShippingStatus: {
           type: String,
