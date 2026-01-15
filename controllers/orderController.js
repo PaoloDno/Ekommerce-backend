@@ -114,21 +114,24 @@ exports.getUserOrders = async (req, res, next) => {
 // Single Order
 // --------------------------------
 
-exports.getOrderById = async (req, res, next) => {
+exports.getStoreOrderById = async (req, res, next) => {
   try {
-    const order = await Order.findById(req.params.orderId)
+    const {orderId} = req.params;
+    console.log(orderId);
+    const order = await Order.findById(orderId)
       .populate("user", "username email")
       .populate({
         path: "items.product",
-        select: "name price productImage attributes seller ",
+        select: "name price productImage attributes seller",
+        //* match: { seller: storeId }, *//
         populate: {
           path: "seller",
-          select: "storeName sellerLogo owner ratings.avergae",
+          select: "name images seller",
         },
       });
-
+    console.log(order);
     if (!order) return res.status(404).json({ message: "Order not found" });
-    res.json({ success: true, order });
+    res.json({ success: true, data: order });
   } catch (err) {
     next(err);
   }
