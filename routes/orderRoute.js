@@ -1,23 +1,65 @@
 const express = require("express");
-const authenticationMiddleware = require('../middlewares/AuthenticationMiddleware.js');
-const adminMiddleware = require('../middlewares/AuthorizationMiddleware.js');
-const { 
-  createOrder,
-  getUserOrders,
-  getStoreOrderById,
-  updateOrderStatus,
-  getSellerOrders,
-  shipSellerItems,
-  confirmItemDelivery
- } = require("../controllers/orderController.js");
 const router = express.Router();
+const authenticationMiddleware = require("../middlewares/AuthenticationMiddleware.js");
 
+const {
+  createOrder,
+  getSellerOrders,
+  getStoreOrderById,
+  processSellerItem,
+  shipSellerItem,
+  confirmItemDelivery,
+} = require("../controllers/orderController.js");
+
+
+  {/**
+  createOrder,
+  getStoreOrderById,
+  getSellerOrders,
+  shipSellerItem,
+  confirmItemDelivery,
+  processSellerItem,
+   */}
+
+// --------------------
+// Buyer
+// --------------------
 router.post("/", authenticationMiddleware, createOrder);
-router.get("/users-orders", authenticationMiddleware, getUserOrders);
-router.put("/:orderId/status", authenticationMiddleware, adminMiddleware, updateOrderStatus);
-router.get("/store/:sellerId", authenticationMiddleware, getSellerOrders);
-router.get("/store-order/:orderId", authenticationMiddleware, getStoreOrderById);
-router.put("/store/ship/:orderId", authenticationMiddleware, shipSellerItems);
-router.put("/delivered/:orderId", authenticationMiddleware, confirmItemDelivery);
+
+// confirm delivery of one item
+router.put(
+  "/:orderId/items/:itemId/confirm",
+  authenticationMiddleware,
+  confirmItemDelivery
+);
+
+// --------------------
+// Seller
+// --------------------
+router.get(
+  "/seller/:sellerId",
+  authenticationMiddleware,
+  getSellerOrders
+);
+
+router.get(
+  "/seller/:orderId",
+  authenticationMiddleware,
+  getStoreOrderById
+);
+
+// mark item as processing
+router.put(
+  "/seller/items/:itemId/process",
+  authenticationMiddleware,
+  processSellerItem
+);
+
+// ship item
+router.put(
+  "/seller/items/:itemId/ship",
+  authenticationMiddleware,
+  shipSellerItem
+);
 
 module.exports = router;

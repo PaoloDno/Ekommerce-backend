@@ -5,10 +5,11 @@ const Product = require("../models/ProductModel");
 const sendNotification = require("../utils/sendNotification");
 const canUpdateStatus = require("../utils/orderPermission");
 
+
+const mongoose = require("mongoose");
 // --------------------------------
 // Helpers
 // --------------------------------
-
 function recomputeOrderStatus(order) {
   const s = order.items.map((i) => i.sellerStatus);
 
@@ -24,7 +25,6 @@ function recomputeOrderStatus(order) {
 // --------------------------------
 // Create Order
 // --------------------------------
-
 exports.createOrder = async (req, res, next) => {
   try {
     const { userId } = req.user;
@@ -75,198 +75,135 @@ exports.createOrder = async (req, res, next) => {
 };
 
 // --------------------------------
-// User Orders
+// Seller Orders (only their items)
 // --------------------------------
-
-exports.getUserOrders = async (req, res, next) => {
-  try {
-    const orders = await Order.find({ user: req.user.userId })
-      .populate({
-        path: "items.product",
-        select: "name price productImage attributes seller",
-        populate: {
-          path: "seller",
-          select: "storeName sellerLogo owner ratings.average",
-        },
-      })
-      .sort({ createdAt: -1 });
-
-    let statusCount = {
-      pending: 0,
-      processing: 0,
-      shipped: 0,
-      delivered: 0,
-      cancelled: 0,
-      refunded: 0,
-    };
-
-    orders.forEach((o) => statusCount[o.status]++);
-
-    console.log(statusCount);
-
-    res.json({ success: true, data: { orders, statusCount } });
-  } catch (err) {
-    next(err);
-  }
-};
-
-// --------------------------------
-// Single Order
-// --------------------------------
-
-exports.getStoreOrderById = async (req, res, next) => {
-  try {
-    const {orderId} = req.params;
-    console.log(orderId);
-    const order = await Order.findById(orderId)
-      .populate("user", "username email")
-      .populate({
-        path: "items.product",
-        select: "name price productImage attributes seller",
-        //* match: { seller: storeId }, *//
-        populate: {
-          path: "seller",
-          select: "name images seller",
-        },
-      });
-    console.log(order);
-    if (!order) return res.status(404).json({ message: "Order not found" });
-    res.json({ success: true, data: order });
-  } catch (err) {
-    next(err);
-  }
-};
-
-// --------------------------------
-// Admin Global Status Update
-// --------------------------------
-
-exports.updateOrderStatus = async (req, res, next) => {
-  try {
-    const { status, role } = req.body;
-    const order = await Order.findById(req.params.orderId).populate("user");
-
-    if (!canUpdateStatus(role, order.status, status))
-      return res.status(403).json({ message: "Not allowed" });
-
-    order.items.forEach((i) => {
-      i.sellerStatus = status;
-      if (status === "shipped") i.shippedAt = new Date();
-      if (status === "delivered") i.deliveredAt = new Date();
-    });
-
-    order.status = recomputeOrderStatus(order);
-    await order.save();
-
-    await sendNotification({
-      userId: order.user._id,
-      role: "user",
-      subject: `Order ${order.status}`,
-      message: `Order #${order._id} is now ${order.status}`,
-      link: `/orders/${order._id}`,
-    });
-
-    res.json({ success: true, order });
-  } catch (err) {
-    next(err);
-  }
-};
-
-// --------------------------------
-// Seller Orders (only own items)
-// --------------------------------
-
 exports.getSellerOrders = async (req, res, next) => {
   try {
-    const sellerId = req.params.sellerId;
+    const { sellerId } = req.params;
 
-    const orders = await Order.find()
-      .populate("user", "username email")
+    console.log("sellerID", sellerId);
+    // Fetch orders with only this seller's items populated
+    const orders = await Order.find({
+      "items.seller": sellerId,
+    })
+      .populate("user", "username firstname lastname email address")
       .populate({
-        path: "items.product",
-        select: "name price productImage attributes seller",
-        match: { seller: sellerId },
-        populate: {
-          path: "seller",
-          select: "name images seller",
-        },
+        path: "items",
+        match: { seller: sellerId }, // only this seller's items
+        populate: [
+          { path: "product" },            // populate product
+          { path: "seller" },             // populate seller
+        ],
       })
+      .sort({ createdAt: -1 })
+      .lean();
 
-      .sort({ createdAt: -1 });
+    console.log("SELLER ORDERS:", JSON.stringify(orders, null, 2));
 
-      console.log("orders", orders);
-      console.log("sellerId", sellerId);
+    res.json({ success: true, storeOrders: orders });
+  } catch (err) {
+    next(err);
+  }
+};
 
-    const sellerOrders = orders
-      .map((o) => {
-        const myItems = o.items.filter((i) => i.product);
-        if (!myItems.length) return null;
 
-        return {
-          _id: o._id,
-          buyer: o.user,
-          status: o.status,
-          items: myItems,
-          createdAt: o.createdAt,
-        };
-      })
-      .filter(Boolean);
+// --------------------------------
+// Seller View Single Order
+// --------------------------------
+exports.getStoreOrderById = async (req, res, next) => {
+  try {
+    const { orderId } = req.params;
+    const sellerId = req.user.sellerId;
 
-    console.log("seller Ordes", sellerOrders);
+    const order = await Order.findById(orderId)
+      .populate("user", "username email")
+      .populate("items.product", "name price productImage");
 
-    res.json({ success: true, storeOrders: sellerOrders });
+    if (!order) return res.status(404).json({ message: "Order not found" });
+
+    const myItems = order.items.filter(
+      (i) => i.seller.toString() === sellerId
+    );
+
+    res.json({
+      success: true,
+      orderId: order._id,
+      buyer: order.user,
+      status: order.status,
+      items: myItems,
+    });
   } catch (err) {
     next(err);
   }
 };
 
 // --------------------------------
-// Seller Ships Their Items
+// Seller Marks Item as Processing
 // --------------------------------
+exports.processSellerItem = async (req, res, next) => {
+  try {
+    const { itemId } = req.params;
+    const sellerId = req.user.sellerId;
 
-exports.shipSellerItems = async (req, res, next) => {
+    const order = await Order.findOne({ "items._id": itemId });
+    if (!order) return res.status(404).json({ message: "Item not found" });
+
+    const item = order.items.id(itemId);
+    if (item.seller.toString() !== sellerId)
+      return res.status(403).json({ message: "Not your item" });
+
+    item.sellerStatus = "processing";
+    await order.save();
+
+    res.json({ success: true, item });
+  } catch (err) {
+    next(err);
+  }
+};
+
+// --------------------------------
+// Seller Ships Item
+// --------------------------------
+exports.shipSellerItem = async (req, res, next) => {
   try {
     const { courier, trackingNumber } = req.body;
-    const sellerId = req.user.userId;
+    const { itemId } = req.params;
+    const sellerId = req.user.sellerId;
 
-    const order = await Order.findById(req.params.orderId).populate(
-      "items.product"
-    );
+    const order = await Order.findOne({ "items._id": itemId });
+    if (!order) return res.status(404).json({ message: "Item not found" });
 
-    let updated = false;
+    const item = order.items.id(itemId);
+    if (item.seller.toString() !== sellerId)
+      return res.status(403).json({ message: "Not your item" });
 
-    for (const item of order.items) {
-      if (
-        item.product.seller.toString() === sellerId &&
-        item.sellerStatus === "processing"
-      ) {
-        item.sellerStatus = "shipped";
-        item.courier = courier;
-        item.trackingNumber = trackingNumber;
-        item.shippedAt = new Date();
-        updated = true;
-      }
-    }
+    if (item.sellerStatus !== "processing")
+      return res.status(400).json({ message: "Item not ready to ship" });
 
-    if (!updated) return res.status(403).json({ message: "Nothing to ship" });
+    item.sellerStatus = "shipped";
+    item.courier = courier;
+    item.trackingNumber = trackingNumber;
+    item.shippedAt = new Date();
 
     order.status = recomputeOrderStatus(order);
     await order.save();
 
-    res.json({ success: true, status: order.status });
+    res.json({ success: true, item });
   } catch (err) {
     next(err);
   }
 };
 
 // --------------------------------
-// Buyer Confirms Delivery (per item)
+// Buyer Confirms Delivery
 // --------------------------------
-
 exports.confirmItemDelivery = async (req, res, next) => {
   try {
     const { orderId, itemId } = req.params;
-    const order = await Order.findOne({ _id: orderId, user: req.user.userId });
+    const userId = req.user.userId;
+
+    const order = await Order.findOne({ _id: orderId, user: userId });
+    if (!order) return res.status(404).json({ message: "Order not found" });
 
     const item = order.items.id(itemId);
     if (item.sellerStatus !== "shipped")

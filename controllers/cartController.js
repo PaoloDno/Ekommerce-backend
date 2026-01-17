@@ -75,7 +75,7 @@ exports.addToCart = async (req, res, next) => {
     const { productId, quantity } = req.body;
     const { userId } = req.user;
 
-    const product = await Product.findById(productId);
+    const product = await Product.findById(productId).populate("seller", "storeName logo");
     if (!product) {
       const error = new Error("Product not found");
       error.statusCode = 404;
@@ -87,7 +87,17 @@ exports.addToCart = async (req, res, next) => {
     if (!cart) {
       cart = await Cart.create({
         user: userId,
-        items: [{ product: productId, quantity }],
+        items: [
+          {
+            product: product._id,
+            seller: product.seller._id,     // ✅ important
+            name: product.name,
+            price: product.price,
+            quantity,
+            stock: product.stock,
+            attributes: {},                 // selected later
+          },
+        ],
       });
     } else {
       const itemIndex = cart.items.findIndex(
@@ -98,10 +108,13 @@ exports.addToCart = async (req, res, next) => {
         cart.items[itemIndex].quantity = quantity;
       } else {
         cart.items.push({
-          product: productId,
+          product: product._id,
+          seller: product.seller._id,     // ✅
           name: product.name,
           price: product.price,
           quantity,
+          stock: product.stock,
+          attributes: {},
         });
       }
       await cart.save();
@@ -116,6 +129,7 @@ exports.addToCart = async (req, res, next) => {
     next(error);
   }
 };
+
 
 exports.removeFromCart = async (req, res, next) => {
   try {
