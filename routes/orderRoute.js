@@ -2,64 +2,23 @@ const express = require("express");
 const router = express.Router();
 const authenticationMiddleware = require("../middlewares/AuthenticationMiddleware.js");
 
-const {
-  createOrder,
-  getSellerOrders,
-  getStoreOrderById,
-  processSellerItem,
-  shipSellerItem,
-  confirmItemDelivery,
-} = require("../controllers/orderController.js");
+const { createOrder, confirmItemDelivery, getSellerOrders, getStoreOrderById, acceptSingleItem, acceptAllMyItems, shipItem, shipOrderForSeller } = require("../controllers/orderController.js");
 
-
-  {/**
-  createOrder,
-  getStoreOrderById,
-  getSellerOrders,
-  shipSellerItem,
-  confirmItemDelivery,
-  processSellerItem,
-   */}
-
-// --------------------
-// Buyer
-// --------------------
+// users
 router.post("/", authenticationMiddleware, createOrder);
+router.patch("/:orderId/Item/:itemId/confirm", authenticationMiddleware, confirmItemDelivery);
 
-// confirm delivery of one item
-router.put(
-  "/:orderId/items/:itemId/confirm",
-  authenticationMiddleware,
-  confirmItemDelivery
-);
+// seller get
+router.get("/seller/:sellerId", authenticationMiddleware, getSellerOrders);
+router.get("/seller-order/:orderId", authenticationMiddleware, getStoreOrderById);
 
-// --------------------
-// Seller
-// --------------------
-router.get(
-  "/seller/:sellerId",
-  authenticationMiddleware,
-  getSellerOrders
-);
+// seller accept
+router.put("/seller/:orderId/accept-item/:itemId", authenticationMiddleware, acceptSingleItem);
+router.put("/seller/:orderId/accept-all/:sellerId", authenticationMiddleware, acceptAllMyItems);
 
-router.get(
-  "/seller/:orderId",
-  authenticationMiddleware,
-  getStoreOrderById
-);
+//seller ship
+router.put("/seller/:orderId/ship-item/:itemId", authenticationMiddleware, shipItem);
+router.put("/seller/:orderId/ship-all/:sellerId", authenticationMiddleware, shipOrderForSeller);
 
-// mark item as processing
-router.put(
-  "/seller/items/:itemId/process",
-  authenticationMiddleware,
-  processSellerItem
-);
-
-// ship item
-router.put(
-  "/seller/items/:itemId/ship",
-  authenticationMiddleware,
-  shipSellerItem
-);
 
 module.exports = router;

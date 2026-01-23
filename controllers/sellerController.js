@@ -130,51 +130,40 @@ exports.getOwnerStore = async (req, res, next) => {
     // ============================
     const orders = await Order.find({
       "items.product": { $in: productIds },
-      status: { $in: ["paid", "shipped", "delivered"] },
     }).lean();
 
     let totalRevenue = 0;
-    let totalOrders = orders.length;
+    let totalOrders = 0;
+    let ordersPending = 0;
+    let ordersProcessing = 0;
+    let ordersToShip = 0;
+    let ordersDelivered = 0;
 
     orders.forEach((order) => {
+      let hasSellerItem = false;
+      let sellerStatuses = [];
+
       order.items.forEach((item) => {
         if (productIds.some((id) => id.equals(item.product))) {
+          hasSellerItem = true;
           totalRevenue += item.price * item.quantity;
+          sellerStatuses.push(item.sellerStatus);
         }
       });
+
+      if (hasSellerItem) {
+        totalOrders++;
+
+        if (sellerStatuses.some((s) => s === "pending")) ordersPending++;
+        else if (sellerStatuses.some((s) => s === "processing")) ordersProcessing++;
+        else if (sellerStatuses.some((s) => s === "forPickUp" || s === "shipped"))
+          ordersToShip++;
+        else if (sellerStatuses.every((s) => s === "delivered")) ordersDelivered++;
+      }
     });
 
     const averageOrderValue =
       totalOrders > 0 ? +(totalRevenue / totalOrders).toFixed(2) : 0;
-
-    // ============================
-    // TIME-BASED METRICS
-    // ============================
-    const now = new Date();
-    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-    const startOfDay = new Date(now.setHours(0, 0, 0, 0));
-
-    const monthlyRevenue = orders
-      .filter((o) => o.createdAt >= startOfMonth)
-      .reduce((sum, o) => {
-        o.items.forEach((i) => {
-          if (productIds.some((id) => id.equals(i.product))) {
-            sum += i.price * i.quantity;
-          }
-        });
-        return sum;
-      }, 0);
-
-    const dailyRevenue = orders
-      .filter((o) => o.createdAt >= startOfDay)
-      .reduce((sum, o) => {
-        o.items.forEach((i) => {
-          if (productIds.some((id) => id.equals(i.product))) {
-            sum += i.price * i.quantity;
-          }
-        });
-        return sum;
-      }, 0);
 
     // ============================
     // PRODUCT METRICS
@@ -206,12 +195,14 @@ exports.getOwnerStore = async (req, res, next) => {
       metrics: {
         revenue: {
           totalRevenue,
-          monthlyRevenue,
-          dailyRevenue,
           averageOrderValue,
         },
         orders: {
           totalOrders,
+          ordersPending,
+          ordersProcessing,
+          ordersToShip,
+          ordersDelivered,
         },
         products: {
           totalProducts,
@@ -220,7 +211,7 @@ exports.getOwnerStore = async (req, res, next) => {
         },
       },
     };
-    console.log(storeData);
+
     res.status(200).json({
       success: true,
       data: storeData,
@@ -231,6 +222,7 @@ exports.getOwnerStore = async (req, res, next) => {
     next(error);
   }
 };
+
 
 exports.getStores = async (req, res, next) => {
   try {

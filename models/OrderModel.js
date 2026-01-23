@@ -20,6 +20,23 @@ const orderItemSchema = new mongoose.Schema(
     stock: Number,
     quantity: Number,
 
+    // Cancellation metadata
+    cancelInfo: {
+      cancelledBy: {
+        type: String,
+        enum: ["buyer", "seller", "system"],
+      },
+      cancelledAt: {
+        type: Date,
+      },
+      cancelReason: {
+        type: String,
+      },
+      refundAmount: {
+        type: Number,
+      },
+    },
+
     attributes: {
       type: Map,
       of: String,
@@ -30,9 +47,12 @@ const orderItemSchema = new mongoose.Schema(
       enum: [
         "pending",
         "processing",
+        "forPickUp",
         "shipped",
         "delivered",
         "cancelled",
+        "requestRefund",
+        "rejectRefund",
         "refunded",
       ],
       default: "pending",
@@ -42,7 +62,6 @@ const orderItemSchema = new mongoose.Schema(
     trackingNumber: String,
     shippedAt: Date,
     deliveredAt: Date,
-    cancelledAt: Date,
     refundedAt: Date,
   },
   { _id: true }
@@ -75,7 +94,6 @@ const orderSchema = new mongoose.Schema(
       transactionId: String,
     },
 
-    // Derived automatically
     status: {
       type: String,
       enum: [
@@ -90,12 +108,14 @@ const orderSchema = new mongoose.Schema(
       ],
       default: "pending",
     },
+
+    refundDeadline: Date,
   },
   { timestamps: true }
 );
 
 // --------------------------------
-// Order Status Engine (Automatic)
+// Order Status Engine
 // --------------------------------
 
 function recomputeOrderStatus(order) {
@@ -113,37 +133,15 @@ function recomputeOrderStatus(order) {
   return "pending";
 }
 
-// Auto update order.status before every save
 orderSchema.pre("save", function (next) {
   this.status = recomputeOrderStatus(this);
+
+  // Auto set refund deadline when fully delivered
+  if (this.status === "delivered" && !this.refundDeadline) {
+    this.refundDeadline = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+  }
+
   next();
 });
-
-// --------------------------------
-// Smart Helpers
-// --------------------------------
-
-// Check if order still has undelivered items
-orderSchema.virtual("hasUndeliveredItems").get(function () {
-  return this.items.some((i) => i.sellerStatus !== "delivered");
-});
-
-// Check undelivered items for a specific seller
-orderSchema.methods.hasUndeliveredItemsForSeller = function (sellerId) {
-  return this.items.some(
-    (i) =>
-      i.seller.toString() === sellerId.toString() &&
-      i.sellerStatus !== "delivered"
-  );
-};
-
-// Ready for escrow / payout system
-orderSchema.methods.isSellerCompleted = function (sellerId) {
-  return this.items.every(
-    (i) =>
-      i.seller.toString() !== sellerId.toString() ||
-      i.sellerStatus === "delivered"
-  );
-};
 
 module.exports = mongoose.model("Order", orderSchema);

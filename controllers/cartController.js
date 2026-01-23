@@ -190,31 +190,23 @@ exports.checkOutCart = async (req, res, next) => {
     const cart = await Cart.findOne({ user: userId }).session(session);
 
     if (!cart || cart.items.length === 0) {
-      await session.abortTransaction();
-      const error = new Error("Cart Not Found");
-      error.statusCode = 400;
-      throw error;
+      throw Object.assign(new Error("Cart is empty"), { statusCode: 400 });
     }
 
     // Step 1: Fetch products
     const productIds = cart.items.map((item) => item.product);
-    const products = await Product.find({ _id: { $in: productIds } }).session(
-      session
-    );
+    const products = await Product.find({ _id: { $in: productIds } }).session(session);
 
-    /*If the field holds an array, then the $in operator selects the documents whose field holds an array that contains at least one element that matches a value in the specified array (for example, <value1>, <value2>, and so on). */
-
+    // Step 2: Stock validation
     const insufficientStock = [];
+
     for (const item of cart.items) {
       const product = products.find(
         (p) => p._id.toString() === item.product.toString()
       );
 
       if (!product) {
-        insufficientStock.push({
-          productId: item.product,
-          reason: "Product no longer exists",
-        });
+        insufficientStock.push({ productId: item.product, reason: "Product not found" });
         continue;
       }
 
@@ -227,57 +219,71 @@ exports.checkOutCart = async (req, res, next) => {
       }
     }
 
-    if (insufficientStock.length > 0) {
-      await session.abortTransaction();
-      console.log("insufficient:", insufficientStock);
-      const error = new Error("Some products are unavailable or low on stock.");
-      error.statusCode = 400;
-      throw error;
+    if (insufficientStock.length) {
+      throw Object.assign(
+        new Error("Some products are unavailable or low on stock."),
+        { statusCode: 400 }
+      );
     }
-    // insufficientStocks = [{stock: -1}}{}] abort session
 
     // Step 3: Calculate totals
-    let itemTotalPrice = 0;
-    for (const item of cart.items) {
+    let itemsTotal = 0;
+
+    const orderItems = cart.items.map((item) => {
       const product = products.find(
         (p) => p._id.toString() === item.product.toString()
       );
-      item.price = product.price;
-      itemTotalPrice += product.price * item.quantity;
-    }
+
+      itemsTotal += product.price * item.quantity;
+
+      return {
+        product: product._id,
+        seller: product.seller,
+        name: product.name,
+        image: product.productImage?.[0],
+        price: product.price,
+        stock: product.stock,
+        quantity: item.quantity,
+        attributes: item.attributes,
+        sellerStatus: "pending",
+      };
+    });
 
     const shippingFee = 50;
-    const totalSum = itemTotalPrice + shippingFee;
+    const total = itemsTotal + shippingFee;
 
-    // Step 4: Bulk update product stock
-    // Model.bulkWrite(operations, options, callback)
-    const bulkOps = cart.items.map((item) => ({
+    // Step 4: Deduct stock
+    const bulkOps = orderItems.map((item) => ({
       updateOne: {
         filter: { _id: item.product },
         update: { $inc: { stock: -item.quantity } },
       },
     }));
     await Product.bulkWrite(bulkOps, { session });
-    // updateOne search one
 
-    // Step 5: Create Order Ongoing
-
-    const order = await Order.create(
+    // Step 5: Create Order (same structure as createOrder)
+    const [order] = await Order.create(
       [
         {
           user: userId,
-          items: cart.items,
-          shippingFee,
-          itemTotalPrice,
-          totalSum,
+          items: orderItems,
+          shippingAddress: req.body.shippingAddress,
+          pricing: {
+            itemsTotal,
+            shippingFee,
+            total,
+          },
+          payment: {
+            method: "cod",
+            isPaid: false,
+          },
           status: "pending",
-          shippingAddress: req.body.shippingAddress || {},
         },
       ],
       { session }
     );
 
-    // Step 6: Delete Cart
+    // Step 6: Clear cart
     await Cart.findOneAndDelete({ user: userId }).session(session);
 
     await session.commitTransaction();
@@ -286,7 +292,7 @@ exports.checkOutCart = async (req, res, next) => {
     res.status(200).json({
       success: true,
       message: "Order placed successfully",
-      order: order[0],
+      order,
     });
   } catch (error) {
     await session.abortTransaction();

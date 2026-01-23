@@ -1,13 +1,30 @@
 const Notification = require("../models/NotificationModel");
 const User = require("../models/UserModel");
 
+
+
+// Time Helpers
+const oneMonthFromNow = () => {
+  const d = new Date();
+  d.setMonth(d.getMonth() + 1);
+  return d;
+};
+
+const oneWeekFromNow = () => {
+  const d = new Date();
+  d.setDate(d.getDate() + 7);
+  return d;
+};
+
+
+// Create Notification (1 month TTL)
 exports.createNotification = async (req, res, next) => {
   try {
     const { role, subject, message, link } = req.body;
     const { userId } = req.user;
 
-    if (!message || !role) {
-      const error = new Error("Message and role are required");
+    if (!message || !role || !subject) {
+      const error = new Error("Subject, message and role are required");
       error.statusCode = 400;
       throw error;
     }
@@ -18,6 +35,7 @@ exports.createNotification = async (req, res, next) => {
       subject,
       message,
       link,
+      expiresAt: oneMonthFromNow(),
     });
 
     await User.findByIdAndUpdate(userId, {
@@ -40,6 +58,8 @@ exports.createNotification = async (req, res, next) => {
   }
 };
 
+
+// Get User Notifications
 exports.getUserNotifications = async (req, res, next) => {
   try {
     const { userId } = req.user;
@@ -55,9 +75,8 @@ exports.getUserNotifications = async (req, res, next) => {
       });
     }
 
-    // 🔹 Sort notifications (newest first)
     const notifications = user.mailbox
-      .filter((m) => m.notification) // safety
+      .filter((m) => m.notification)
       .sort(
         (a, b) =>
           new Date(b.notification.createdAt) -
@@ -73,7 +92,6 @@ exports.getUserNotifications = async (req, res, next) => {
         createdAt: m.notification.createdAt,
       }));
 
-
     res.status(200).json({
       success: true,
       notifications,
@@ -84,6 +102,7 @@ exports.getUserNotifications = async (req, res, next) => {
 };
 
 
+// Mark One As Read (shorten to 1 week)
 exports.markRead = async (req, res, next) => {
   try {
     const { notifId } = req.params;
@@ -98,22 +117,36 @@ exports.markRead = async (req, res, next) => {
       return res.status(404).json({ message: "Notification not found" });
     }
 
+    await Notification.findByIdAndUpdate(notifId, {
+      isRead: true,
+      expiresAt: oneWeekFromNow(),
+    });
+
     res.status(200).json({ success: true });
   } catch (error) {
     next(error);
   }
 };
 
+
+// Mark All As Read (shorten all to 1 week)
 exports.markAllRead = async (req, res, next) => {
   try {
     const { userId } = req.user;
-    if (!userId) {
-      return res.status(401).json({ message: "Unauthorized" });
-    }
 
     await User.updateOne(
       { _id: userId },
       { $set: { "mailbox.$[].read": true } }
+    );
+
+    await Notification.updateMany(
+      { userId },
+      {
+        $set: {
+          isRead: true,
+          expiresAt: oneWeekFromNow(),
+        },
+      }
     );
 
     res.status(200).json({
@@ -125,6 +158,8 @@ exports.markAllRead = async (req, res, next) => {
   }
 };
 
+
+// Delete One
 exports.deleteNotification = async (req, res, next) => {
   try {
     const { notifId } = req.params;
@@ -146,6 +181,8 @@ exports.deleteNotification = async (req, res, next) => {
   }
 };
 
+
+// Broadcast To Users
 exports.broadcastUsers = async (req, res, next) => {
   try {
     const { message, link, subject } = req.body;
@@ -161,6 +198,7 @@ exports.broadcastUsers = async (req, res, next) => {
       subject,
       message,
       link: link || null,
+      expiresAt: oneMonthFromNow(),
     }));
 
     const notifications = await Notification.insertMany(notifDocs);
@@ -191,12 +229,14 @@ exports.broadcastUsers = async (req, res, next) => {
   }
 };
 
+
+// Broadcast To Sellers\
 exports.broadcastSellers = async (req, res, next) => {
   try {
-    const { message, link } = req.body;
+    const { message, link, subject } = req.body;
 
-    if (!message) {
-      const error = new Error("Message is required");
+    if (!message || !subject) {
+      const error = new Error("Message and subject are required");
       error.statusCode = 400;
       throw error;
     }
@@ -206,18 +246,30 @@ exports.broadcastSellers = async (req, res, next) => {
     const notifDocs = sellers.map((u) => ({
       userId: u._id,
       role: "seller",
+      subject,
       message,
       link: link || null,
+      expiresAt: oneMonthFromNow(),
     }));
 
     const notifications = await Notification.insertMany(notifDocs);
 
-    // Push to mailbox
-    for (const notif of notifications) {
-      await User.findByIdAndUpdate(notif.userId, {
-        $push: { mailbox: { notification: notif._id, mailedAt: new Date() } },
-      });
-    }
+    const bulkOps = notifications.map((n) => ({
+      updateOne: {
+        filter: { _id: n.userId },
+        update: {
+          $push: {
+            mailbox: {
+              notification: n._id,
+              mailedAt: new Date(),
+              read: false,
+            },
+          },
+        },
+      },
+    }));
+
+    await User.bulkWrite(bulkOps);
 
     res.status(200).json({
       success: true,
