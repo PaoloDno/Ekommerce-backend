@@ -52,7 +52,7 @@ const orderItemSchema = new mongoose.Schema(
         "delivered",
         "cancelled",
         "requestRefund",
-        "rejectRefund",
+        "rejected",
         "refunded",
       ],
       default: "pending",
@@ -60,6 +60,7 @@ const orderItemSchema = new mongoose.Schema(
 
     courier: String,
     trackingNumber: String,
+    courierId: String,
     shippedAt: Date,
     deliveredAt: Date,
     refundedAt: Date,
@@ -98,6 +99,7 @@ const orderSchema = new mongoose.Schema(
       type: String,
       enum: [
         "pending",
+        "partial_processing",
         "processing",
         "partially_shipped",
         "shipped",
@@ -105,6 +107,7 @@ const orderSchema = new mongoose.Schema(
         "cancelled",
         "partially_cancelled",
         "refunded",
+        "rejected"
       ],
       default: "pending",
     },
@@ -119,19 +122,23 @@ const orderSchema = new mongoose.Schema(
 // --------------------------------
 
 function recomputeOrderStatus(order) {
-  const statuses = order.items.map((i) => i.sellerStatus);
+  const s = order.items.map(i => i.sellerStatus);
 
-  if (statuses.every((s) => s === "cancelled")) return "cancelled";
-  if (statuses.every((s) => s === "refunded")) return "refunded";
-  if (statuses.every((s) => s === "delivered")) return "delivered";
-  if (statuses.every((s) => s === "shipped")) return "shipped";
+  if (s.every(v => v === "delivered")) return "delivered";
+  if (s.every(v => v === "cancelled")) return "cancelled";
+  if (s.every(v => v === "refunded")) return "refunded";
+  if (s.every(v => v === "shipped")) return "shipped";
 
-  if (statuses.some((s) => s === "shipped")) return "partially_shipped";
-  if (statuses.some((s) => s === "processing")) return "processing";
-  if (statuses.some((s) => s === "cancelled")) return "partially_cancelled";
+  if (s.some(v => v === "refunded")) return "partially_refunded";
+  if (s.some(v => v === "delivered")) return "partially_delivered";
+  if (s.some(v => v === "shipped")) return "partially_shipped";
+  if (s.some(v => v === "forPickUp")) return "ready_for_pickup";
+  if (s.some(v => v === "processing")) return "partial_processing";
+  if (s.some(v => v === "cancelled")) return "partially_cancelled";
 
   return "pending";
 }
+
 
 orderSchema.pre("save", function (next) {
   this.status = recomputeOrderStatus(this);

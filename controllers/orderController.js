@@ -12,9 +12,16 @@ function recomputeOrderStatus(order) {
 
   if (s.every((v) => v === "delivered")) return "delivered";
   if (s.every((v) => v === "cancelled")) return "cancelled";
+  if (s.every((v) => v === "refunded")) return "refunded";
   if (s.every((v) => v === "shipped")) return "shipped";
+
+  if (s.some((v) => v === "refunded")) return "partially_refunded";
+  if (s.some((v) => v === "delivered")) return "partially_delivered";
   if (s.some((v) => v === "shipped")) return "partially_shipped";
-  if (s.some((v) => v === "processing")) return "processing";
+  if (s.some((v) => v === "forPickUp")) return "ready_for_pickup";
+  if (s.some((v) => v === "processing")) return "partial_processing";
+  if (s.some((v) => v === "cancelled")) return "partially_cancelled";
+
   return "pending";
 }
 
@@ -26,10 +33,37 @@ async function recomputeAndSave(orderId) {
 }
 
 const oneMonthFromNow = () => {
-      const d = new Date();
-      d.setMonth(d.getMonth() + 1);
-      return d;
-    };
+  const d = new Date();
+  d.setMonth(d.getMonth() + 1);
+  return d;
+};
+
+function autoDeliverItems(orders) {
+  const now = Date.now();
+  const THREE_DAYS = 15 * 1000; //3 * 24 * 60 * 60 * 1000;
+
+  let hasChanges = false;
+
+  orders.forEach((order) => {
+    order.items.forEach((item) => {
+      if (
+        item.sellerStatus === "shipped" &&
+        item.shippedAt &&
+        now - new Date(item.shippedAt).getTime() >= THREE_DAYS
+      ) {
+        item.sellerStatus = "delivered";
+        item.deliveredAt = new Date();
+        hasChanges = true;
+      }
+    });
+
+    if (hasChanges) {
+      order.status = undefined; // force recompute in pre-save
+    }
+  });
+
+  return hasChanges;
+}
 
 // --------------------------------
 // Create Order
@@ -43,19 +77,25 @@ exports.createOrder = async (req, res, next) => {
       shippingFee,
       totalSum,
       shippingAddress,
-      payment,
+      paymentMethod,
+      courier,
     } = req.body;
 
     const newOrder = await Order.create({
       user: userId,
-      items: items.map((i) => ({ ...i, productShippingStatus: "pending" })),
+      items: items.map((i) => ({
+        ...i,
+        productShippingStatus: "pending",
+        courier,
+        trackingNumber: i._id,
+      })),
       shippingAddress,
       pricing: {
         itemsTotal: itemTotalPrice,
         shippingFee: shippingFee || 0,
         total: totalSum,
       },
-      payment: { method: "cod", isPaid: false },
+      payment: { method: paymentMethod, isPaid: false },
       status: "pending",
     });
 
@@ -66,8 +106,6 @@ exports.createOrder = async (req, res, next) => {
     const products = await Product.find({
       _id: { $in: items.map((i) => i.product) },
     }).populate({ path: "seller", populate: { path: "owner" } });
-
-    
 
     const notified = new Set();
     for (const p of products) {
@@ -102,20 +140,28 @@ exports.getSellerOrders = async (req, res, next) => {
       .populate({
         path: "items.product",
       })
-      .sort({ createdAt: -1 })
-      .lean();
+      .sort({ createdAt: -1 });
 
-    // Keep only this seller's items
-    orders = orders
-      .map(order => ({
-        ...order,
+    // delivered items update
+    const updated = autoDeliverItems(orders);
+
+    if (updated) {
+      for (const order of orders) {
+        await order.save(); // triggers pre-save recompute + refundDeadline
+      }
+    }
+
+    // Filter only this seller’s items for response
+    const storeOrders = orders
+      .map((order) => ({
+        ...order.toObject(),
         items: order.items.filter(
-          item => item.seller.toString() === sellerId
+          (item) => item.seller.toString() === sellerId,
         ),
       }))
-      .filter(order => order.items.length > 0); // remove empty orders
+      .filter((order) => order.items.length > 0);
 
-    res.json({ success: true, storeOrders: orders });
+    res.json({ success: true, storeOrders });
   } catch (err) {
     next(err);
   }
@@ -192,6 +238,22 @@ exports.shipSingleItem = async (req, res, next) => {
 
     await recomputeAndSave(orderId);
 
+    await sendNotification({
+      userId: order.seller,
+      role: "seller",
+      subject: `Shipping Order Item#${itemId}`,
+      message: `user#${order.user} order#${itemId} shipped`,
+      link: `/order/${itemId}`,
+    });
+
+    await sendNotification({
+      userId: order.user,
+      role: "user",
+      subject: `Order#${orderId} has been accepted`,
+      message: `seller#${order.seller} has processing order#${orderId}`,
+      link: `/order/${itemId}`,
+    });
+
     res.json({ success: true, message: "Item request for pickUp", order });
   } catch (err) {
     next(err);
@@ -204,7 +266,6 @@ exports.acceptAllMyItems = async (req, res, next) => {
     const { orderId, sellerId } = req.params;
     const { userId } = req.user;
 
-    
     console.log("seller accept order", userId);
     console.log("seller accept order");
 
@@ -220,6 +281,23 @@ exports.acceptAllMyItems = async (req, res, next) => {
       return res.status(400).json({ message: "No pending items to accept" });
 
     const order = await recomputeAndSave(orderId);
+
+    await sendNotification({
+      userId: order.seller,
+      role: "seller",
+      subject: `Proccessing Order#${orderId}`,
+      message: `user#${order.user} order#${itemId} accepted and bound to be process`,
+      link: `/orders/${itemId}`,
+    });
+
+    await sendNotification({
+      userId: order.user,
+      role: "user",
+      subject: `Order#${orderId} has been accepted`,
+      message: `seller#${order.seller} has processing order#${orderId}`,
+      link: `/orders/${itemId}`,
+    });
+
     res.json({ success: true, message: "All items accepted", order });
   } catch (err) {
     next(err);
@@ -231,21 +309,18 @@ exports.acceptAllMyItems = async (req, res, next) => {
 exports.shipItem = async (req, res, next) => {
   try {
     const { orderId, itemId } = req.params;
-    const { courier, trackingNumber } = req.body;
-    const sellerId = req.user.sellerId;
+    const { courierId } = req.body;
 
     const order = await Order.findOneAndUpdate(
       {
         _id: orderId,
         "items._id": itemId,
-        "items.seller": sellerId,
         "items.sellerStatus": "processing",
       },
       {
         $set: {
           "items.$.sellerStatus": "shipped",
-          "items.$.courier": courier,
-          "items.$.trackingNumber": trackingNumber,
+          "items.$.courierId": courierId,
           "items.$.shippedAt": new Date(),
         },
       },
@@ -256,6 +331,22 @@ exports.shipItem = async (req, res, next) => {
       return res.status(400).json({ message: "Item not ready to ship" });
 
     await recomputeAndSave(orderId);
+
+    await sendNotification({
+      userId: order.seller,
+      role: "seller",
+      subject: `Item#${itemId} Shipped`,
+      message: `user#${order.user} item#${itemId} has been shipped`,
+      link: `/order/${itemId}`,
+    });
+
+    await sendNotification({
+      userId: order.user,
+      role: "user",
+      subject: "Request Refund",
+      message: `seller#${order.seller} has shipped order#${orderId}`,
+      link: `/order/${itemId}`,
+    });
 
     res.json({ success: true, message: "Item shipped", order });
   } catch (err) {
@@ -268,17 +359,15 @@ exports.shipItem = async (req, res, next) => {
 // Seller: Ship All His Items In Order
 exports.shipOrderForSeller = async (req, res, next) => {
   try {
-    const { orderId } = req.params;
-    const { courier, trackingNumber } = req.body;
-    const sellerId = req.user.sellerId;
+    const { orderId, sellerId } = req.params;
+    const { courierId } = req.body;
 
     const order = await Order.findOneAndUpdate(
       { _id: orderId },
       {
         $set: {
           "items.$[i].sellerStatus": "shipped",
-          "items.$[i].courier": courier,
-          "items.$[i].trackingNumber": trackingNumber,
+          "items.$[i].courierId": courierId,
           "items.$[i].shippedAt": new Date(),
         },
       },
@@ -295,6 +384,22 @@ exports.shipOrderForSeller = async (req, res, next) => {
 
     await recomputeAndSave(orderId);
 
+    await sendNotification({
+      userId: order.seller,
+      role: "seller",
+      subject: `Order#${orderId} Shipped`,
+      message: `user#${order.user} order#${orderId} has been shipped`,
+      link: `/orders/${orderId}`,
+    });
+
+    await sendNotification({
+      userId: order.user,
+      role: "user",
+      subject: "Request Refund",
+      message: `seller#${order.seller} has shipped order#${orderId}`,
+      link: `/orders/${orderId}`,
+    });
+
     res.json({ success: true, message: "All items shipped", order });
   } catch (err) {
     next(err);
@@ -302,6 +407,7 @@ exports.shipOrderForSeller = async (req, res, next) => {
 };
 
 // Buyer: Confirm Delivery
+// Automatic Delivery
 exports.confirmItemDelivery = async (req, res, next) => {
   try {
     const { orderId, itemId } = req.params;
@@ -333,16 +439,15 @@ exports.confirmItemDelivery = async (req, res, next) => {
     next(err);
   }
 };
-
-
+// not used anymore
 exports.userCancelItem = async (req, res, next) => {
   try {
     const { orderId, itemId } = req.params;
-    const {userId} = req.user;
+    const { userId } = req.user;
 
     const order = await Order.findById(orderId);
 
-    if(!order) {
+    if (!order) {
       const error = new Error("No Order match");
       error.statusCode = 400;
       throw error;
@@ -350,13 +455,15 @@ exports.userCancelItem = async (req, res, next) => {
 
     const item = order.items.id(itemId);
 
-    if(!item) {
+    if (!item) {
       const error = new Error("item not found");
       error.statusCode = 400;
       throw error;
     }
-     if (["shipped", "delivered"].includes(item.sellerStatus))
-      return res.status(400).json({ message: "Item already shipped. Cannot cancel." });
+    if (["shipped", "delivered"].includes(item.sellerStatus))
+      return res
+        .status(400)
+        .json({ message: "Item already shipped. Cannot cancel." });
 
     item.sellerStatus = "cancelled";
     item.cancelledBy = "buyer";
@@ -370,7 +477,6 @@ exports.userCancelItem = async (req, res, next) => {
     next(err);
   }
 };
-
 
 exports.storeCancelItem = async (req, res, next) => {
   try {
@@ -424,69 +530,6 @@ exports.storeCancelItem = async (req, res, next) => {
   }
 };
 
-
-exports.requestRefund = async (req, res, next) => {
-  try {
-    const { orderId, itemId } = req.params;
-    const { userId } = req.user;
-
-    const order = await Order.findById(orderId);
-    if (!order) {
-      const error = new Error("No Order match");
-      error.statusCode = 400;
-      throw error;
-    }
-
-    if (order.user.toString() !== userId.toString()) {
-      const error = new Error("Not your order");
-      error.statusCode = 403;
-      throw error;
-    }
-
-    const item = order.items.id(itemId);
-    if (!item) {
-      const error = new Error("Item not found");
-      error.statusCode = 400;
-      throw error;
-    }
-
-    if (item.sellerStatus !== "delivered") {
-      const error = new Error("Item not delivered yet. Refund not allowed.");
-      error.statusCode = 400;
-      throw error;
-    }
-
-    const deliveredAt = item.deliveredAt;
-    const now = new Date();
-    const diffDays = (now - deliveredAt) / (1000 * 60 * 60 * 24);
-
-    if (diffDays > 7) {
-      const error = new Error("Refund period expired (7 days only).");
-      error.statusCode = 400;
-      throw error;
-    }
-
-    item.refundStatus = "requested";
-    item.refundRequestedAt = new Date();
-
-    await order.save();
-
-    // notify seller
-    await sendNotification({
-      userId: item.seller,
-      role: "seller",
-      subject: "Refund Requested",
-      message: `Buyer requested a refund for an item in Order #${order._id}.`,
-      link: `/seller/orders/${order._id}`,
-    });
-
-    return res.json({ message: "Refund requested successfully", order });
-  } catch (err) {
-    next(err);
-  }
-};
-
-
 exports.sellerHandleRefund = async (req, res, next) => {
   try {
     const { orderId, itemId, sellerId } = req.params;
@@ -530,7 +573,6 @@ exports.sellerHandleRefund = async (req, res, next) => {
         message: `Your refund request for Order #${order._id} was approved.`,
         link: `/orders/${order._id}`,
       });
-
     } else if (action === "reject") {
       item.sellerStatus = "rejected";
 
@@ -541,7 +583,6 @@ exports.sellerHandleRefund = async (req, res, next) => {
         message: `Your refund request for Order #${order._id} was rejected by the seller.`,
         link: `/orders/${order._id}`,
       });
-
     } else {
       const error = new Error("Invalid action");
       error.statusCode = 400;
@@ -556,8 +597,52 @@ exports.sellerHandleRefund = async (req, res, next) => {
       message: `Refund ${action}d successfully`,
       order,
     });
-
   } catch (err) {
     next(err);
+  }
+};
+
+// VIEW ORDER
+
+exports.getOrderById = async (req, res, next) => {
+  try {
+    const { orderId } = req.params;
+
+    const order = await Order.findById(orderId)
+      .populate("user", "username firstname lastname email address")
+      .populate(
+        "items.product",
+        "name description price stock productImage averageRating numOfReviews",
+      )
+      .populate(
+        "items.seller",
+        "storeName email phone description address ratings",
+      );
+
+    if (!order) return res.status(404).json({ message: "Order not found" });
+
+    res.json(order);
+  } catch (error) {
+    next(error);
+  }
+};
+
+exports.getOrdersItemById = async (req, res, next) => {
+  try {
+    const { orderId, itemId } = req.params;
+
+    const order = await Order.findById(orderId)
+      .populate("items.product", "name price productImage")
+      .populate("items.seller", "storeName email");
+
+    if (!order) return res.status(404).json({ message: "Order not found" });
+
+    const item = order.items.id(itemId);
+    if (!item)
+      return res.status(404).json({ message: "Item not found in this order" });
+
+    res.json(item);
+  } catch (error) {
+    next(error);
   }
 };
