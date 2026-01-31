@@ -48,15 +48,15 @@ connectDB();
 
 //routes
 
-app.use('/kommerce/user', USERroute);
-app.use('/kommerce/cart', CARTroute);
-app.use('/kommerce/category', CATEGORYroute);
-app.use('/kommerce/product', PRODUCTroute);
-app.use('/kommerce/order', ORDERroute);
-app.use('/kommerce/review', REVIEWroute);
-app.use('/kommerce/store', SELLERroute);
-app.use('/kommerce/notif', NOTIFroute);
-app.use('/kommerce/admin', ADMINroute);
+app.use('/user', USERroute);
+app.use('/cart', CARTroute);
+app.use('/category', CATEGORYroute);
+app.use('/product', PRODUCTroute);
+app.use('/order', ORDERroute);
+app.use('/review', REVIEWroute);
+app.use('/store', SELLERroute);
+app.use('/notif', NOTIFroute);
+app.use('/admin', ADMINroute);
 
 app.get('/', (req, res) => {
   res.send('Hello World!')
