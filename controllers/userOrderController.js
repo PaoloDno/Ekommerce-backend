@@ -48,6 +48,22 @@ exports.getUserOrders = async (req, res, next) => {
     if (updated) {
       for (const order of orders) {
         await order.save(); // triggers pre-save recompute + refundDeadline
+
+        await sendNotification({
+          userId: order.seller,
+          role: "seller",
+          subject: "Order cancelled",
+          message: `user ${order.user} has cancelled order#${order.orderId}`,
+          link: `/orders/${order.orderId || ""}`,
+        });
+        console.log("userId", userId);
+        await sendNotification({
+          userId: userId,
+          role: "user",
+          subject: "Request Refund",
+          message: `cancellation for ${order.orderId || ""}`,
+          link: `/orders/${order.itemId}`,
+        });
       }
     }
 
@@ -61,6 +77,7 @@ exports.getUserOrders = async (req, res, next) => {
 exports.cancelUserOrder = async (req, res, next) => {
   try {
     const { orderId } = req.params;
+    const { userId } = req.user;
 
     const order = await Order.findByIdAndUpdate(
       orderId,
@@ -83,7 +100,7 @@ exports.cancelUserOrder = async (req, res, next) => {
       role: "seller",
       subject: "Order cancelled",
       message: `user ${order.user} has cancelled order#${orderId}`,
-      link: `/orders/${orderId}`,
+      link: `/order/${orderId}`,
     });
 
     await sendNotification({
@@ -91,11 +108,12 @@ exports.cancelUserOrder = async (req, res, next) => {
       role: "user",
       subject: "Request Refund",
       message: `cancellation for ${orderId}`,
-      link: `/orders/${itemId}`,
+      link: `/order/${orderId}`,
     });
 
     res.json({ success: true, order });
   } catch (error) {
+    console.log(error);
     next(error);
   }
 };

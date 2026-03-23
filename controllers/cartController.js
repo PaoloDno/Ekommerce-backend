@@ -90,7 +90,7 @@ exports.addToCart = async (req, res, next) => {
         items: [
           {
             product: product._id,
-            seller: product.seller._id,     // ✅ important
+            seller: product.seller._id,     // important
             name: product.name,
             price: product.price,
             quantity,
@@ -109,7 +109,7 @@ exports.addToCart = async (req, res, next) => {
       } else {
         cart.items.push({
           product: product._id,
-          seller: product.seller._id,     // ✅
+          seller: product.seller._id,     // 
           name: product.name,
           price: product.price,
           quantity,

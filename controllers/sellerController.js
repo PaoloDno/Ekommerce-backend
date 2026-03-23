@@ -96,6 +96,8 @@ exports.getStoreId = async (req, res, next) => {
       reviews: { top3, low3 },
     };
 
+    console.log(storeData);
+
     res.status(200).json({
       success: true,
       data: storeData,

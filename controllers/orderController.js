@@ -40,11 +40,13 @@ const oneMonthFromNow = () => {
 
 function autoDeliverItems(orders) {
   const now = Date.now();
-  const THREE_DAYS = 15 * 1000; //3 * 24 * 60 * 60 * 1000;
+  const THREE_DAYS = 15 * 1000;
 
-  let hasChanges = false;
+  const updatedOrders = [];
 
   orders.forEach((order) => {
+    let orderChanged = false;
+
     order.items.forEach((item) => {
       if (
         item.sellerStatus === "shipped" &&
@@ -53,16 +55,17 @@ function autoDeliverItems(orders) {
       ) {
         item.sellerStatus = "delivered";
         item.deliveredAt = new Date();
-        hasChanges = true;
+        orderChanged = true;
       }
     });
 
-    if (hasChanges) {
-      order.status = undefined; // force recompute in pre-save
+    if (orderChanged) {
+      order.status = undefined;
+      updatedOrders.push(order);
     }
   });
 
-  return hasChanges;
+  return updatedOrders;
 }
 
 // --------------------------------
@@ -116,11 +119,20 @@ exports.createOrder = async (req, res, next) => {
           role: "seller",
           subject: "New Order",
           message: `Order #${newOrder._id} contains your products.`,
-          link: `/seller/orders/${newOrder._id}`,
+          link: `/order/${newOrder._id}`,
           expiresAt: oneMonthFromNow(),
         });
       }
     }
+
+    await sendNotification({
+      userId: userId,
+      role: "user",
+      subject: "New Order",
+      message: `Order #${newOrder._id} contains your products.`,
+      link: `/order/${newOrder._id}`,
+      expiresAt: oneMonthFromNow(),
+    });
 
     await Cart.findOneAndDelete({ user: userId });
 
@@ -143,12 +155,10 @@ exports.getSellerOrders = async (req, res, next) => {
       .sort({ createdAt: -1 });
 
     // delivered items update
-    const updated = autoDeliverItems(orders);
+    const updatedOrders = autoDeliverItems(orders);
 
-    if (updated) {
-      for (const order of orders) {
-        await order.save(); // triggers pre-save recompute + refundDeadline
-      }
+    for (const order of updatedOrders) {
+      await order.save();
     }
 
     // Filter only this seller’s items for response
@@ -199,6 +209,7 @@ exports.getStoreOrderById = async (req, res, next) => {
 exports.acceptSingleItem = async (req, res, next) => {
   try {
     const { orderId, itemId } = req.params;
+    const { userId } = req.user;
 
     console.log("accept single item");
 
@@ -214,6 +225,24 @@ exports.acceptSingleItem = async (req, res, next) => {
 
     await recomputeAndSave(orderId);
 
+    await sendNotification({
+      userId: order.user,
+      role: "user",
+      subject: "Order Accepted",
+      message: `Order #${order._id} is being prepared by seller`,
+      link: `/order/${order._id}`,
+      expiresAt: oneMonthFromNow(),
+    });
+
+    await sendNotification({
+      userId: userId,
+      role: "seller",
+      subject: "Order Accepted",
+      message: `Order #${order._id} is being prepared by seller`,
+      link: `/order/${order._id}`,
+      expiresAt: oneMonthFromNow(),
+    });
+
     res.json({ success: true, message: "Item accepted", order });
   } catch (err) {
     next(err);
@@ -223,7 +252,7 @@ exports.acceptSingleItem = async (req, res, next) => {
 exports.shipSingleItem = async (req, res, next) => {
   try {
     const { orderId, itemId } = req.params;
-
+    const { userId } = req.user;
     console.log("accept single item");
 
     const order = await Order.findOneAndUpdate(
@@ -238,21 +267,24 @@ exports.shipSingleItem = async (req, res, next) => {
 
     await recomputeAndSave(orderId);
 
-    await sendNotification({
-      userId: order.seller,
-      role: "seller",
-      subject: `Shipping Order Item#${itemId}`,
-      message: `user#${order.user} order#${itemId} shipped`,
-      link: `/order/${itemId}`,
-    });
+    const item = order.items.id(itemId);
+    if (item) {
+      await sendNotification({
+        userId: userId, // correct seller for this item
+        role: "seller",
+        subject: `Item#${itemId} Shipped`,
+        message: `user#${order.user} item#${item._id} is ready for pickUP`,
+        link: `/order/${orderId}`,
+      });
 
-    await sendNotification({
-      userId: order.user,
-      role: "user",
-      subject: `Order#${orderId} has been accepted`,
-      message: `seller#${order.seller} has processing order#${orderId}`,
-      link: `/order/${itemId}`,
-    });
+      await sendNotification({
+        userId: order.user, // the buyer
+        role: "user",
+        subject: `Order#${orderId} Item Shipped`,
+        message: `seller#${item.seller} has shipped order#${orderId} item#${item._id}`,
+        link: `/order/${item._id}`,
+      });
+    }
 
     res.json({ success: true, message: "Item request for pickUp", order });
   } catch (err) {
@@ -276,26 +308,32 @@ exports.acceptAllMyItems = async (req, res, next) => {
         arrayFilters: [{ "i.seller": sellerId, "i.sellerStatus": "pending" }],
       },
     );
-    console.log("how");
     if (result.modifiedCount === 0)
       return res.status(400).json({ message: "No pending items to accept" });
 
     const order = await recomputeAndSave(orderId);
 
-    await sendNotification({
-      userId: order.seller,
-      role: "seller",
-      subject: `Proccessing Order#${orderId}`,
-      message: `user#${order.user} order#${itemId} accepted and bound to be process`,
-      link: `/orders/${itemId}`,
-    });
+    let { items } = order;
+    await recomputeAndSave(orderId);
+
+    for (const item of items) {
+      if (item.seller === sellerId) {
+        await sendNotification({
+          userId: order.user,
+          role: "user",
+          subject: `Shipping Order Item#${item._id}`,
+          message: `user#${order.user} order#${item._id} shipped`,
+          link: `/order/${item._id}`,
+        });
+      }
+    }
 
     await sendNotification({
-      userId: order.user,
-      role: "user",
-      subject: `Order#${orderId} has been accepted`,
-      message: `seller#${order.seller} has processing order#${orderId}`,
-      link: `/orders/${itemId}`,
+      userId: sellerId,
+      role: "seller",
+      subject: `Order#${order._id} has been accepted by you!`,
+      message: `You are to start processing order#${order._id}`,
+      link: `/order/${order._id}`,
     });
 
     res.json({ success: true, message: "All items accepted", order });
@@ -310,12 +348,12 @@ exports.shipItem = async (req, res, next) => {
   try {
     const { orderId, itemId } = req.params;
     const { courierId } = req.body;
-
+    const ALLOWED_STATUSES = ["pending", "processing"];
     const order = await Order.findOneAndUpdate(
       {
         _id: orderId,
         "items._id": itemId,
-        "items.sellerStatus": "processing",
+    "items.sellerStatus": { $in: ALLOWED_STATUSES },
       },
       {
         $set: {
@@ -326,27 +364,31 @@ exports.shipItem = async (req, res, next) => {
       },
       { new: true },
     );
-
+    console.log("ORDER TO SHIP", order);
     if (!order)
       return res.status(400).json({ message: "Item not ready to ship" });
 
     await recomputeAndSave(orderId);
 
-    await sendNotification({
-      userId: order.seller,
-      role: "seller",
-      subject: `Item#${itemId} Shipped`,
-      message: `user#${order.user} item#${itemId} has been shipped`,
-      link: `/order/${itemId}`,
-    });
+    const item = order.items.id(itemId); // get the specific item
 
-    await sendNotification({
-      userId: order.user,
-      role: "user",
-      subject: "Request Refund",
-      message: `seller#${order.seller} has shipped order#${orderId}`,
-      link: `/order/${itemId}`,
-    });
+    if (item) {
+      await sendNotification({
+        userId: item.seller, // correct seller for this item
+        role: "seller",
+        subject: `Item#${itemId} Shipped`,
+        message: `user#${order.user} item#${itemId} has been shipped`,
+        link: `/order/${itemId}`,
+      });
+
+      await sendNotification({
+        userId: order.user, // the buyer
+        role: "user",
+        subject: `Order#${orderId} Item Shipped`,
+        message: `seller#${item.seller} has shipped order#${orderId} item#${itemId}`,
+        link: `/order/${itemId}`,
+      });
+    }
 
     res.json({ success: true, message: "Item shipped", order });
   } catch (err) {

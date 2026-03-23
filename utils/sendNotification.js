@@ -23,6 +23,8 @@ module.exports = async function sendNotification({
     link,
     expiresAt: expiresAt || oneMonthFromNow(),
   });
+  
+  console.log("CREATE NOTIF", notif);
 
   await User.findByIdAndUpdate(userId, {
     $push: {

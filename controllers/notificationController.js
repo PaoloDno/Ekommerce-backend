@@ -75,6 +75,8 @@ exports.getUserNotifications = async (req, res, next) => {
       });
     }
 
+    console.log(user.mailbox);
+
     const notifications = user.mailbox
       .filter((m) => m.notification)
       .sort(

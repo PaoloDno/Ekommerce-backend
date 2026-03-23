@@ -168,33 +168,47 @@ exports.getUserProfile = async (req, res, next) => {
   try {
     const { userId } = req.user;
 
+    // Remove orphan references first
+    await User.updateOne(
+      { _id: userId },
+      { $pull: { mailbox: { notification: { $exists: false } } } }
+    );
+
     const user = await User.findById(userId)
-      .select("-password -__v -createdAt -updatedAt") // Hide sensitive fields
+      .select("-password -__v -createdAt -updatedAt")
       .populate({
         path: "orderhistory.order",
-        select: "orderNumber totalAmount status createdAt", // Limit order fields
+        select: "orderNumber totalAmount status createdAt",
       })
       .populate({
         path: "reviewHistory.product",
-        select: "name price", // Limit product fields
+        select: "name price",
       })
       .populate({
         path: "reviewHistory.review",
-        select: "rating comment createdAt", // Limit review fields
+        select: "rating comment createdAt",
       })
-      .lean(); // Return plain JS object, not a Mongoose doc
+      .populate({
+        path: "mailbox.notification",
+        select: "role subject message link expiresAt createdAt",
+      })
+      .lean();
 
     if (!user) {
       const error = new Error("User not found");
       error.statusCode = 404;
       throw error;
     }
-    console.log(user);
+
+    // Filter nulls from response only
+    user.mailbox = user.mailbox.filter(mail => mail.notification);
+
     res.status(200).json({
       success: true,
       message: "User fetched successfully",
       data: user,
     });
+
   } catch (error) {
     next(error);
   }
